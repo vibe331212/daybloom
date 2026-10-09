@@ -270,7 +270,7 @@ textarea.inp{resize:vertical;min-height:70px}
 .qr-box{background:#fff;padding:16px;border-radius:18px;display:inline-block;margin:18px auto}
 .qr-box img,.qr-box canvas{display:block;width:220px;height:220px}
 .avatar.group{background:color-mix(in oklab,var(--accent) 20%,var(--c-surface2));color:var(--accent)}
-.avatar.group svg{width:46%;height:46%}
+.avatar.group svg{width:56%;height:56%}
 .chat-row .fn span{max-width:100%}
 .chat-row.unread .fn span{color:var(--text);font-weight:600}
 .chat-meta{display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;flex:none}
@@ -314,6 +314,17 @@ button.chat-head:hover{background:var(--c-surface2)}
 #photoView.open{display:flex;animation:fade .2s}
 #photoView img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
 #photoView .close{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;display:grid;place-items:center}
+.src-sheet{width:min(400px,100%)}
+.src-list{display:flex;flex-direction:column;gap:8px;margin:16px 0 10px}
+.src-opt{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:14px;background:var(--c-surface2);border:1px solid var(--border);text-align:left;width:100%}
+.src-opt:hover{border-color:var(--accent)}
+.src-opt b{display:block;font-size:15px}
+.src-opt span span{font-size:12px;color:var(--muted)}
+.src-ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:color-mix(in oklab,var(--accent) 16%,transparent);color:var(--accent);flex:none}
+#sheet.dropping{outline:3px dashed var(--accent);outline-offset:-8px}
+.code-timer{width:min(240px,100%);margin:-8px auto 18px;font-size:12px;color:var(--muted);font-weight:600;display:flex;flex-direction:column;gap:7px;align-items:center}
+.code-bar{width:100%;height:5px;border-radius:99px;background:var(--c-surface2);overflow:hidden}
+.code-bar i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:inherit;transition:width 1s linear}
 .pick-list{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto}
 .pick{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:12px;cursor:pointer}
 .pick:hover{background:var(--c-surface2)}
@@ -546,8 +557,9 @@ html.locked body{overflow:hidden}
           <div class="card me-card">
             <div id="myAvatar"></div>
             <div class="me-name" id="myName"></div>
-            <div class="sub">Your friend code</div>
+            <div class="sub">Your friend code changes every 45 seconds</div>
             <div class="code off" id="myCode">Not online yet</div>
+            <div class="code-timer" id="codeTimer" hidden><div class="code-bar"><i id="codeBar"></i></div><span id="codeLeft"></span></div>
             <div class="btn-row">
               <button class="btn ghost" id="showQr" disabled><svg class="i" data-icon="qr"></svg>Show</button>
               <button class="btn ghost" id="copyCode" disabled><svg class="i" data-icon="copy"></svg>Copy</button>
@@ -681,6 +693,23 @@ html.locked body{overflow:hidden}
 <!-- General sheet (friend schedule, QR) -->
 <div class="scrim" id="sheetScrim"><div class="modal" id="sheet"></div></div>
 
+<!-- Where should the photo come from? -->
+<div class="scrim" id="srcScrim">
+  <div class="modal src-sheet" role="dialog" aria-modal="true" aria-labelledby="srcTitle">
+    <h2 id="srcTitle">Add a photo</h2>
+    <div class="src-list">
+      <button class="src-opt" data-src="library"><span class="src-ic"><svg class="i" data-icon="image"></svg></span><span><b>Photo Library</b><span>Pick from your photos</span></span></button>
+      <button class="src-opt" data-src="camera" id="srcCameraOpt"><span class="src-ic"><svg class="i" data-icon="camera"></svg></span><span><b>Take Photo</b><span>Use your camera</span></span></button>
+      <button class="src-opt" data-src="file"><span class="src-ic"><svg class="i" data-icon="folder"></svg></span><span><b>Choose File</b><span>Pick a picture from a folder</span></span></button>
+    </div>
+    <div class="hint" id="srcHint" style="line-height:1.5;margin:4px 2px 14px"></div>
+    <button class="btn ghost" id="srcCancel" style="width:100%">Cancel</button>
+  </div>
+</div>
+<input type="file" id="inLibrary" accept="image/*" hidden>
+<input type="file" id="inCamera" accept="image/*" capture="environment" hidden>
+<input type="file" id="inFile" accept="image/*,.heic,.heif" hidden>
+
 <!-- Confirm -->
 <div class="scrim" id="askScrim">
   <div class="modal" style="width:min(400px,100%)">
@@ -708,6 +737,7 @@ html.locked body{overflow:hidden}
 <div class="toasts" id="toasts"></div>
 
 <script src="config.js"></script>
+<script src="group-icons.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
@@ -741,6 +771,8 @@ const ICONS = {
   chat:'<path d="M20 11.5c0 4-3.6 7-8 7-1.2 0-2.3-.2-3.3-.6L4.5 19.5l1.2-3.4C4.6 14.9 4 13.3 4 11.5c0-4 3.6-7 8-7s8 3 8 7Z"/>',
   send:'<path d="M4.5 11.8 19.5 5l-5.6 14.5-3-5.6Z"/><path d="m10.9 13.9 8.6-8.9"/>',
   logout:'<path d="M14 5H7.5A2.5 2.5 0 0 0 5 7.5v9A2.5 2.5 0 0 0 7.5 19H14"/><path d="M11 12h9M17 8.5l3.5 3.5-3.5 3.5"/>',
+  image:'<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="9.5" r="1.8"/><path d="m4 17 5-5 4 4 2.5-2.5L20 18"/>',
+  folder:'<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/>',
   camera:'<path d="M4.5 8.5a2 2 0 0 1 2-2h2l1.5-2h4l1.5 2h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2Z"/><circle cx="12" cy="13" r="3.5"/>',
   globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5c-2.6-2.4-3.9-5.2-3.9-8.5s1.3-6.1 3.9-8.5Z"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
@@ -1594,7 +1626,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
     },
     async addFriend(code){ return ok(await sb.rpc('add_friend',{p_code:code})); },
     async removeFriend(id){ ok(await sb.rpc('remove_friend',{p_friend:id})); },
-    async newCode(){ return ok(await sb.rpc('new_code')); },
+    async currentCode(){ return ok(await sb.rpc('current_code')); },
     async signOut(){ await sb.auth.signOut(); },
     async chats(){
       const convIds=ok(await sb.from('conversation_members').select('conversation_id').eq('user_id',uid)).map(r=>r.conversation_id);
@@ -1682,29 +1714,68 @@ function renderMyCard(){
   $('#myAvatar').innerHTML=avatar(profile,96);
   $('#myName').innerHTML=`${esc(profile.name||SI_USER?.username||'')}<div class="uname">${SI_USER?'@'+esc(SI_USER.username):''}</div>`;
   const c=$('#myCode');
-  if(Cloud.on&&Cloud.me?.code){ c.textContent=fmtCode(Cloud.me.code); c.classList.remove('off'); }
-  else { c.textContent='Not online yet'; c.classList.add('off'); }
+  if(Cloud.on&&Cloud.code){ c.textContent=fmtCode(Cloud.code.code); c.classList.remove('off'); }
+  else { c.textContent=Cloud.on?'Getting your code...':'Not online yet'; c.classList.add('off'); }
+  $('#codeTimer').hidden=!(Cloud.on&&Cloud.code);
 }
-const shareUrl=()=>`${location.origin}${location.pathname}?add=${Cloud.me.code}`;
-$('#copyCode').onclick=async()=>{ try{ await navigator.clipboard.writeText(fmtCode(Cloud.me.code)); toast('Copied','Your code is ready to paste'); }catch{ toast('Your code',fmtCode(Cloud.me.code)); } };
+
+/* ================= Friend code that changes every 45 seconds ================= */
+const CODE_LIFE=45000;
+let codeFetching=false, qrObj=null;
+const qrIsOpen=()=>$('#sheetScrim').classList.contains('open')&&$('#qrBox');
+const codeLeftMs=()=>Cloud.code?Math.max(0,Cloud.code.exp-Date.now()):0;
+async function fetchCode(){
+  if(codeFetching||!Cloud.on) return; codeFetching=true;
+  try{ const r=await Cloud.api.currentCode(); Cloud.code={code:r.code,exp:Date.now()+r.seconds_left*1000}; }
+  catch(e){ /* try again on the next tick */ }
+  finally{ codeFetching=false; }
+  renderMyCard(); paintCodeTimer(true);
+}
+function paintCodeTimer(codeChanged){
+  if(!Cloud.code) return;
+  const left=codeLeftMs(), secs=Math.ceil(left/1000), pct=Math.min(100,left/CODE_LIFE*100)+'%';
+  $('#codeLeft').textContent=secs>0?`New code in ${secs}s`:'Getting a new code...'; $('#codeBar').style.width=pct;
+  if(qrIsOpen()){
+    $('#qrLeft').textContent=$('#codeLeft').textContent; $('#qrBar').style.width=pct;
+    if(codeChanged){ $('#qrCode').textContent=fmtCode(Cloud.code.code); if(qrObj) qrObj.makeCode(shareUrl()); }
+  }
+}
+// Only keep codes coming while someone could be looking at them
+setInterval(()=>{
+  if(!Cloud.on) return;
+  const looking=($('#view-friends').classList.contains('active')||qrIsOpen())&&!document.hidden;
+  if(!looking) return;
+  if(!Cloud.code||codeLeftMs()<300) fetchCode(); else paintCodeTimer(false);
+},1000);
+const shareUrl=()=>`${location.origin}${location.pathname}?add=${Cloud.code?.code||''}`;
+$('#copyCode').onclick=async()=>{
+  if(!Cloud.code) return;
+  const secs=Math.ceil(codeLeftMs()/1000);
+  try{ await navigator.clipboard.writeText(fmtCode(Cloud.code.code)); toast('Copied',`Your code changes in ${secs}s, so share it fast`); }
+  catch{ toast('Your code',`${fmtCode(Cloud.code.code)} (changes in ${secs}s)`); }
+};
 $('#shareCode').onclick=async()=>{
-  const text=`Add me on Daybloom! My code is ${fmtCode(Cloud.me.code)}`;
+  if(!Cloud.code) return;
+  const text=`Add me on Daybloom! My code is ${fmtCode(Cloud.code.code)}. It only works for ${Math.ceil(codeLeftMs()/1000)} more seconds.`;
   if(navigator.share){ try{ await navigator.share({title:'Daybloom',text,url:shareUrl()}); }catch{} }
-  else { try{ await navigator.clipboard.writeText(text+' '+shareUrl()); toast('Link copied','Send it to your friend'); }catch{} }
+  else { try{ await navigator.clipboard.writeText(text+' '+shareUrl()); toast('Link copied','Send it fast. Your code changes every 45 seconds.'); }catch{} }
 };
 $('#showQr').onclick=()=>{
-  $('#sheet').classList.remove('chat-sheet'); Chat.open=null;
+  if(!Cloud.code) return;
+  $('#sheet').classList.remove('chat-sheet'); Chat.open=null; Chat.onInfoPhoto=null;
   $('#sheet').innerHTML=`<div class="modal-top"><h2>Your code</h2><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
     <div style="text-align:center">
       <div style="margin-top:14px;display:flex;justify-content:center">${avatar(profile,72)}</div>
       <div class="me-name" style="margin-top:8px">${esc(profile.name||'Me')}</div>
       <div class="qr-box" id="qrBox"></div>
-      <div class="code" style="margin:0 0 6px">${fmtCode(Cloud.me.code)}</div>
-      <div class="sub">Have your friend scan this with their phone camera, or type the code into their app.</div>
+      <div class="code" id="qrCode" style="margin:0 0 10px">${fmtCode(Cloud.code.code)}</div>
+      <div class="code-timer" style="margin:0 auto 14px"><div class="code-bar"><i id="qrBar"></i></div><span id="qrLeft"></span></div>
+      <div class="sub">Have your friend scan this with their phone camera, or type the code into their app. It changes every 45 seconds.</div>
     </div>`;
-  if(window.QRCode) new QRCode($('#qrBox'),{text:shareUrl(),width:220,height:220,colorDark:'#111118',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-  else $('#qrBox').style.display='none';
-  $('#sheet [data-close]').onclick=()=>closeScrim('#sheetScrim'); openScrim('#sheetScrim');
+  qrObj=window.QRCode?new QRCode($('#qrBox'),{text:shareUrl(),width:220,height:220,colorDark:'#111118',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M}):null;
+  if(!qrObj) $('#qrBox').style.display='none';
+  paintCodeTimer(false);
+  $('#sheet [data-close]').onclick=()=>{ closeScrim('#sheetScrim'); qrObj=null; }; openScrim('#sheetScrim');
 };
 $('#addCode').oninput=e=>{
   const raw=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
@@ -1723,7 +1794,7 @@ async function addFriend(code){
   finally{ btn.disabled=!Cloud.on; }
 }
 async function offerAdd(code){
-  if(Cloud.me && code===Cloud.me.code) return;
+  if(Cloud.code && code===Cloud.code.code) return;
   if(await ask('Add a friend?',`Add the person with code ${fmtCode(code)} as your friend? You will be able to see each other's schedules.`,'Add friend')) addFriend(code);
 }
 async function refreshFriends(){
@@ -1773,17 +1844,8 @@ const Chat={list:[],open:null,msgs:[],read:store.get('chatRead',{}),media:{},med
 const chatOther=c=>c.members.find(m=>m.id!==Cloud.me?.id);
 const chatName=c=>c.is_group?(c.name||c.members.filter(m=>m.id!==Cloud.me?.id).map(m=>m.name).join(', ')||'Group'):(chatOther(c)?.name||'Chat');
 const isUnread=c=>!!(c.last&&c.last.sender!==Cloud.me?.id&&(!Chat.read[c.id]||c.last.created_at>Chat.read[c.id]));
-const GROUP_ICONS={
-  users:ICONS.users,
-  star:'<path d="M12 3.8l2.5 5.1 5.6.8-4.1 4 1 5.6-5-2.7-5 2.7 1-5.6-4.1-4 5.6-.8z"/>',
-  heart:'<path d="M12 19.5s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 6.6a4.3 4.3 0 0 1 7.5 2.9c0 5.6-7.5 10-7.5 10Z"/>',
-  music:'<path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>',
-  ball:'<circle cx="12" cy="12" r="8.5"/><path d="m12 8 3.3 2.4-1.3 3.9h-4l-1.3-3.9Z"/><path d="M12 8V3.5M15.3 10.4l4.3-1.4M14 14.3l2.6 3.6M10 14.3l-2.6 3.6M8.7 10.4 4.4 9"/>',
-  book:'<path d="M12 6.5c-1.8-1.3-4.3-2-7.5-2v13c3.2 0 5.7.7 7.5 2 1.8-1.3 4.3-2 7.5-2v-13c-3.2 0-5.7.7-7.5 2Z"/><path d="M12 6.5v13"/>',
-  game:'<path d="M7.5 8h9a4 4 0 0 1 3.9 4.9l-.9 3.9a2.2 2.2 0 0 1-3.8 1L14 16h-4l-1.7 1.8a2.2 2.2 0 0 1-3.8-1l-.9-3.9A4 4 0 0 1 7.5 8Z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r=".7" fill="currentColor"/><circle cx="17" cy="13.5" r=".7" fill="currentColor"/>',
-  paw:'<circle cx="7" cy="10" r="1.8"/><circle cx="10.2" cy="6.5" r="1.8"/><circle cx="13.8" cy="6.5" r="1.8"/><circle cx="17" cy="10" r="1.8"/><path d="M12 11.5c-3 0-5.5 3.2-5.5 5.4 0 1.6 1.4 2.3 2.9 1.8 1-.3 1.8-.5 2.6-.5s1.6.2 2.6.5c1.5.5 2.9-.2 2.9-1.8 0-2.2-2.5-5.4-5.5-5.4Z"/>',
-  rocket:'<path d="M12 3.5c3 2 4.5 5.3 4.5 9.5l-2 3h-5l-2-3c0-4.2 1.5-7.5 4.5-9.5Z"/><circle cx="12" cy="10" r="1.6"/><path d="M9.5 16 7 19.5M14.5 16l2.5 3.5M12 17v3"/>'
-};
+const GROUP_ICONS=Object.assign({},...(window.GROUP_ICON_SETS||[]).map(set=>set.icons));
+if(!GROUP_ICONS.users) GROUP_ICONS.users=ICONS.users;
 const inkOn=hex=>{ const h=(hex||'#7c5cff').replace('#',''), r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16); return (.299*r+.587*g+.114*b)>170?'#1c1d24':'#ffffff'; };
 function chatAvatar(c,size){
   const box=`width:${size}px;height:${size}px`;
@@ -1810,8 +1872,8 @@ function openChatInfo(c){
   const view=()=>({is_group:true,photo_kind:d.kind,photo_value:d.value,photo_color:d.color,photo_url:d.preview});
   $('#sheet').innerHTML=`<div class="modal-top"><button class="icon-btn" id="infoBack" aria-label="Back to chat">${icon('left')}</button><h2>Group info</h2><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
     <div class="info-hero"><span id="infoPhoto"></span>
-      <button class="btn ghost" id="pickPhoto">${icon('camera')}Choose photo</button><input type="file" id="photoFile" accept="image/*" hidden></div>
-    <div class="field"><label>Or pick an icon</label><div class="icon-grid" id="iconGrid"></div></div>
+      <button class="btn ghost" id="pickPhoto">${icon('camera')}Choose photo</button></div>
+    <div class="field"><label>Or pick an icon</label><div class="fam" id="iconSets"></div><div class="icon-grid" id="iconGrid"></div></div>
     <div class="field"><label>Or an animal</label><div class="icon-grid" id="animalGrid"></div></div>
     <div class="field"><label>Color</label><div class="chips" id="infoColors"></div></div>
     <div class="field"><label for="infoName">Group name</label><input class="inp" id="infoName" maxlength="40" placeholder="${esc(chatName({...c,name:''}))}"></div>
@@ -1822,7 +1884,11 @@ function openChatInfo(c){
   const paint=()=>{
     $('#infoPhoto').innerHTML=chatAvatar(view(),104);
     const color=d.color||BG_COLORS[0];
-    $('#iconGrid').innerHTML=Object.keys(GROUP_ICONS).map(k=>`<button type="button" class="icon-pick${d.kind==='icon'&&d.value===k||(!d.kind&&k==='users')?' on':''}" data-k="${k}" aria-label="${k} icon">${chatAvatar({is_group:true,photo_kind:'icon',photo_value:k,photo_color:color},46)}</button>`).join('');
+    const sets=window.GROUP_ICON_SETS||[{name:'Icons',icons:GROUP_ICONS}];
+    if(d.set==null){ const i=sets.findIndex(x=>d.kind==='icon'&&x.icons[d.value]); d.set=i<0?0:i; }
+    $('#iconSets').innerHTML=sets.map((x,i)=>`<button type="button" class="chip${i===d.set?' on':''}" data-i="${i}">${esc(x.name)}</button>`).join('');
+    $('#iconSets').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ d.set=+b.dataset.i; paint(); });
+    $('#iconGrid').innerHTML=Object.keys(sets[d.set].icons).map(k=>`<button type="button" class="icon-pick${d.kind==='icon'&&d.value===k||(!d.kind&&k==='users')?' on':''}" data-k="${k}" aria-label="${k} icon">${chatAvatar({is_group:true,photo_kind:'icon',photo_value:k,photo_color:color},46)}</button>`).join('');
     $('#animalGrid').innerHTML=Object.entries(ANIMALS).map(([k,a])=>`<button type="button" class="icon-pick${d.kind==='animal'&&d.value===k?' on':''}" data-k="${k}" aria-label="${a.name}">${avatar({style:k,shirt:color},46)}</button>`).join('');
     $('#infoColors').innerHTML=BG_COLORS.map(c2=>`<button type="button" class="swatch${c2===d.color?' on':''}" style="background:${c2}" data-c="${c2}" aria-label="Color ${c2}"></button>`).join('');
     $('#iconGrid').querySelectorAll('.icon-pick').forEach(b=>b.onclick=()=>{ d.kind='icon'; d.value=b.dataset.k; d.color=d.color||BG_COLORS[0]; d.file=null; d.preview=null; paint(); });
@@ -1830,12 +1896,12 @@ function openChatInfo(c){
     $('#infoColors').querySelectorAll('.swatch').forEach(b=>b.onclick=()=>{ d.color=b.dataset.c; if(d.kind==='photo') { d.kind='icon'; d.value='users'; d.file=null; d.preview=null; } else if(!d.kind){ d.kind='icon'; d.value='users'; } paint(); });
   };
   paint();
-  $('#pickPhoto').onclick=()=>$('#photoFile').click();
-  $('#photoFile').onchange=async e=>{
-    const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  const usePhoto=async f=>{
     try{ d.file=await squarePhoto(f); d.kind='photo'; d.preview=URL.createObjectURL(d.file); $('#infoErr').textContent=''; paint(); }
     catch(x){ $('#infoErr').textContent=x.message; }
   };
+  Chat.onInfoPhoto=usePhoto;
+  $('#pickPhoto').onclick=async()=>{ const f=await choosePhoto(); if(f) usePhoto(f); };
   const back=()=>openChat(c.id);
   $('#infoBack').onclick=back;
   $('#sheet [data-close]').onclick=()=>closeScrim('#sheetScrim');
@@ -1908,11 +1974,55 @@ async function loadMedia(){
 function openPhoto(src){ const v=$('#photoView'); v.querySelector('img').src=src; v.classList.add('open'); }
 $('#photoView').onclick=()=>$('#photoView').classList.remove('open');
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('#photoView').classList.remove('open'); });
+// Ask where the photo should come from, like the menu on an iPhone
+const touchDevice=matchMedia('(pointer: coarse)').matches;
+function choosePhoto(){
+  return new Promise(resolve=>{
+    let settled=false; const done=f=>{ if(settled) return; settled=true; closeScrim('#srcScrim'); resolve(f||null); };
+    $('#srcCameraOpt').hidden=!touchDevice;
+    $('#srcHint').textContent=touchDevice?'':'On a Mac, click Photos in the left side of the window that opens. You can also drag a photo from the Photos app into Daybloom, or copy it and paste it in.';
+    document.querySelectorAll('#srcScrim .src-opt').forEach(b=>b.onclick=()=>{
+      const inp=$({library:'#inLibrary',camera:'#inCamera',file:'#inFile'}[b.dataset.src]);
+      inp.value=''; inp.onchange=()=>done(inp.files[0]); inp.oncancel=()=>done(null);
+      closeScrim('#srcScrim'); inp.click();
+    });
+    $('#srcCancel').onclick=()=>done(null);
+    $('#srcScrim').onclick=e=>{ if(e.target.id==='srcScrim') done(null); };
+    openScrim('#srcScrim');
+  });
+}
+const isImageFile=f=>f&&(f.type.startsWith('image/')||/\.(heic|heif)$/i.test(f.name));
+// Where a dragged-in or pasted photo should go right now: the open chat, or the Group info photo
+function photoTarget(){
+  if(!$('#sheetScrim').classList.contains('open')) return null;
+  if(chatIsShowing()) return addChatPhoto;
+  if(Chat.onInfoPhoto&&$('#infoPhoto')) return Chat.onInfoPhoto;
+  return null;
+}
+let dropTimer=null;
+document.addEventListener('dragover',e=>{
+  if(!photoTarget()||![...(e.dataTransfer?.types||[])].includes('Files')) return;
+  e.preventDefault(); $('#sheet').classList.add('dropping');
+  clearTimeout(dropTimer); dropTimer=setTimeout(()=>$('#sheet').classList.remove('dropping'),200);
+});
+document.addEventListener('drop',e=>{
+  const go=photoTarget(); if(!go) return;
+  e.preventDefault(); $('#sheet').classList.remove('dropping');
+  const f=[...(e.dataTransfer?.files||[])].find(isImageFile); if(f) go(f);
+});
+document.addEventListener('paste',e=>{
+  const go=photoTarget(); if(!go) return;
+  const f=[...(e.clipboardData?.files||[])].find(isImageFile); if(f){ e.preventDefault(); go(f); }
+});
+async function addChatPhoto(f){
+  try{ const blob=await shrinkPhoto(f); setAttach({blob,url:URL.createObjectURL(blob)}); $('#chatText')?.focus(); }
+  catch(x){ toast('Could not add photo',x.message,'x'); }
+}
 // Phone photos are huge, so shrink them (longest side 1280px) before sending
 async function shrinkPhoto(file,max=1280){
   const url=URL.createObjectURL(file);
   try{
-    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error("That file isn't a photo Daybloom can send")); i.src=url; });
+    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error(/\.(heic|heif)$/i.test(file.name)?'This browser cannot open HEIC photos. Drag the photo in from the Photos app instead, or export it as a JPEG.':"That file isn't a photo Daybloom can send")); i.src=url; });
     const k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)), cv=document.createElement('canvas');
     cv.width=Math.round(img.naturalWidth*k); cv.height=Math.round(img.naturalHeight*k);
     cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
@@ -1925,7 +2035,7 @@ function setAttach(a){
 }
 async function openChat(id){
   const c=Chat.list.find(x=>x.id===id); if(!c) return;
-  Chat.open=id; Chat.msgs=[];
+  Chat.open=id; Chat.msgs=[]; Chat.onInfoPhoto=null;
   $('#sheet').classList.add('chat-sheet');
   $('#sheet').innerHTML=`<div class="chat">
     <div class="modal-top chat-top"><${c.is_group?'button type="button" id="chatInfoBtn" aria-label="Group info"':'div'} class="chat-head">${chatAvatar(c,44)}
@@ -1933,16 +2043,11 @@ async function openChat(id){
       <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
     <div class="chat-msgs" id="chatMsgs" aria-live="polite"><div class="empty" style="margin:auto">Loading...</div></div>
     <div class="chat-attach" id="chatAttach" hidden><span class="att"><img id="attImg" alt="Photo to send"><button type="button" class="att-x" id="attX" aria-label="Remove photo">${icon('x')}</button></span></div>
-    <form class="chat-input" id="chatForm"><button type="button" class="icon-btn att-btn" id="chatPhotoBtn" aria-label="Add a photo">${icon('camera')}</button><input type="file" id="chatPhotoFile" accept="image/*" hidden>
+    <form class="chat-input" id="chatForm"><button type="button" class="icon-btn att-btn" id="chatPhotoBtn" aria-label="Add a photo">${icon('camera')}</button>
       <textarea class="inp" id="chatText" rows="1" maxlength="1000" placeholder="Message" aria-label="Message"></textarea>
       <button class="round go send" aria-label="Send">${icon('send')}</button></form></div>`;
   setAttach(null);
-  $('#chatPhotoBtn').onclick=()=>$('#chatPhotoFile').click();
-  $('#chatPhotoFile').onchange=async e=>{
-    const f=e.target.files[0]; e.target.value=''; if(!f) return;
-    try{ const blob=await shrinkPhoto(f); setAttach({blob,url:URL.createObjectURL(blob)}); $('#chatText').focus(); }
-    catch(x){ toast('Could not add photo',x.message,'x'); }
-  };
+  $('#chatPhotoBtn').onclick=async()=>{ const f=await choosePhoto(); if(f) addChatPhoto(f); };
   $('#attX').onclick=()=>setAttach(null);
   $('#sheet [data-close]').onclick=()=>{ closeScrim('#sheetScrim'); Chat.open=null; };
   if(c.is_group) $('#chatInfoBtn').onclick=()=>openChatInfo(c);

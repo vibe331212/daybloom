@@ -131,20 +131,7 @@ begin
   return me;
 end $$;
 
-create or replace function public.add_friend(p_code text)
-returns json language plpgsql security definer set search_path = public as $$
-declare f public.profiles;
-begin
-  if auth.uid() is null then raise exception 'Not signed in'; end if;
-  select * into f from public.profiles
-   where code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
-  if not found then raise exception 'No one has that code'; end if;
-  if f.id = auth.uid() then raise exception 'That is your own code'; end if;
-  insert into public.friendships (user_id, friend_id)
-  values (auth.uid(), f.id), (f.id, auth.uid())
-  on conflict do nothing;
-  return json_build_object('id', f.id, 'name', f.name, 'username', f.username, 'shirt', f.shirt, 'style', f.style);
-end $$;
+-- add_friend is defined further down, with the 45-second friend codes
 
 create or replace function public.remove_friend(p_friend uuid)
 returns void language sql security definer set search_path = public as $$
@@ -393,3 +380,57 @@ create policy "chat media: members send" on storage.objects for insert to authen
 drop policy if exists "chat media: sender removes" on storage.objects;
 create policy "chat media: sender removes" on storage.objects for delete to authenticated
   using (bucket_id = 'chat-media' and owner_id = auth.uid()::text);
+
+-- ---------- Friend codes that change every 45 seconds ----------
+create table if not exists public.friend_codes (
+  code text primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  expires_at timestamptz not null
+);
+create index if not exists friend_codes_user_idx on public.friend_codes(user_id, expires_at desc);
+alter table public.friend_codes enable row level security;
+revoke all on public.friend_codes from anon, authenticated;   -- only reachable through the functions below
+
+-- Your code right now. A new one is made when the last one runs out.
+create or replace function public.current_code()
+returns json language plpgsql security definer set search_path = public as $$
+declare c public.friend_codes; fresh text;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  delete from public.friend_codes where expires_at < now() - interval '2 minutes';
+  select * into c from public.friend_codes
+   where user_id = auth.uid() and expires_at > now() + interval '1 second'
+   order by expires_at desc limit 1;
+  if not found then
+    loop
+      fresh := public.new_friend_code();
+      exit when not exists (select 1 from public.friend_codes where code = fresh);
+    end loop;
+    insert into public.friend_codes (code, user_id, expires_at) values (fresh, auth.uid(), now() + interval '45 seconds')
+    returning * into c;
+  end if;
+  return json_build_object('code', c.code, 'seconds_left', extract(epoch from c.expires_at - now()));
+end $$;
+
+-- Adding a friend only works with a code that's still active (a few seconds of grace for slow typing)
+create or replace function public.add_friend(p_code text)
+returns json language plpgsql security definer set search_path = public as $$
+declare f public.profiles; owner uuid;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  select user_id into owner from public.friend_codes
+   where code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'))
+     and expires_at > now() - interval '5 seconds';
+  if owner is null then raise exception 'That code is wrong or has already changed. Ask your friend for the new one.'; end if;
+  if owner = auth.uid() then raise exception 'That is your own code'; end if;
+  select * into f from public.profiles where id = owner;
+  insert into public.friendships (user_id, friend_id)
+  values (auth.uid(), f.id), (f.id, auth.uid())
+  on conflict do nothing;
+  return json_build_object('id', f.id, 'name', f.name, 'username', f.username, 'shirt', f.shirt, 'style', f.style);
+end $$;
+
+revoke execute on function public.current_code() from public, anon;
+grant  execute on function public.current_code() to authenticated;
+revoke execute on function public.add_friend(text) from public, anon;
+grant  execute on function public.add_friend(text) to authenticated;
