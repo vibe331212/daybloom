@@ -157,8 +157,21 @@ textarea.inp{resize:vertical;min-height:70px}
 .seg{display:inline-flex;background:var(--c-surface2);border:1px solid var(--border);border-radius:12px;padding:4px;gap:4px;flex-wrap:wrap}
 .seg button{padding:8px 16px;border-radius:9px;font-weight:600;font-size:13px;color:var(--muted)}
 .seg button.on{background:var(--c-surface);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.12)}
-.now{font-size:clamp(44px,7vw,72px);font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums;line-height:1}
-.now small{font-size:.35em;color:var(--muted);font-weight:600;margin-left:6px}
+.now{font-size:clamp(52px,10vw,104px);font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap}
+.now .sec{color:var(--accent)}
+.now small{font-size:.3em;color:var(--muted);font-weight:700;margin-left:10px;letter-spacing:0}
+.analog{width:min(320px,80vw);aspect-ratio:1;display:block;margin:12px auto}
+.analog .face{fill:var(--c-surface2);stroke:var(--border);stroke-width:2}
+.analog .tk{stroke:var(--muted);stroke-width:1.4;stroke-linecap:round}
+.analog .tk.big{stroke:var(--text);stroke-width:3.4}
+.analog .num{fill:var(--text);font:700 17px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:central}
+.analog .hand{stroke-linecap:round}
+.analog .hand.h{stroke:var(--text);stroke-width:7}
+.analog .hand.m{stroke:var(--text);stroke-width:4.5}
+.analog .hand.s{stroke:var(--accent);stroke-width:2.2}
+.analog .sdot{fill:var(--accent)}
+.analog .pin{fill:var(--c-surface)}
+.clock-digital{text-align:center;font-size:15px;color:var(--muted);font-weight:600;margin-top:4px}
 .ring-wrap{position:relative;width:min(280px,72vw);aspect-ratio:1;margin:24px auto}
 .ring-wrap svg{width:100%;height:100%;transform:rotate(-90deg)}
 .ring-bg{stroke:var(--c-surface2);fill:none;stroke-width:10}
@@ -384,11 +397,15 @@ html.locked body{overflow:hidden}
     <section class="view" id="view-clock">
       <div class="head">
         <div><div class="now" id="nowClock"></div><div class="sub" id="nowDate"></div></div>
-        <div class="seg" id="clockSeg"><button class="on" data-mode="timer">Timer</button><button data-mode="stopwatch">Stopwatch</button></div>
+        <div class="seg" id="clockSeg"><button class="on" data-mode="clock">Clock</button><button data-mode="timer">Timer</button><button data-mode="stopwatch">Stopwatch</button></div>
       </div>
       <div class="clock-grid">
         <div class="card">
-          <div id="timerPane">
+          <div id="clockPane">
+            <svg class="analog" id="analog" viewBox="0 0 200 200" role="img" aria-label="Clock face"></svg>
+            <div class="clock-digital" id="clockZone"></div>
+          </div>
+          <div id="timerPane" style="display:none">
             <div class="ring-wrap">
               <svg viewBox="0 0 120 120"><defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent2)"/></linearGradient></defs>
                 <circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" id="ring" cx="60" cy="60" r="52"/></svg>
@@ -1282,15 +1299,40 @@ $('#swLap').onclick=()=>{
 };
 document.querySelectorAll('#clockSeg button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#clockSeg button').forEach(x=>x.classList.toggle('on',x===b));
-  $('#timerPane').style.display=b.dataset.mode==='timer'?'':'none'; $('#swPane').style.display=b.dataset.mode==='timer'?'none':'';
+  ['clock','timer','stopwatch'].forEach(m=>$('#'+({clock:'clockPane',timer:'timerPane',stopwatch:'swPane'})[m]).style.display=b.dataset.mode===m?'':'none');
 });
 
 /* ================= Live clock ================= */
+let lastClockText='';
 function tickClock(){
-  const n=new Date(), h=n.getHours();
-  $('#nowClock').innerHTML=`${(h%12)||12}:${pad(n.getMinutes())}<small>${h<12?'AM':'PM'}</small>`;
+  const n=new Date(), h=n.getHours(), ampm=h<12?'AM':'PM';
+  const text=`${(h%12)||12}:${pad(n.getMinutes())}:${pad(n.getSeconds())} ${ampm}`;
+  if(text===lastClockText) return; lastClockText=text;
+  $('#nowClock').innerHTML=`${(h%12)||12}:${pad(n.getMinutes())}<span class="sec">:${pad(n.getSeconds())}</span><small>${ampm}</small>`;
   $('#nowDate').textContent=`${DAYS[n.getDay()]}, ${MONTHS[n.getMonth()]} ${n.getDate()}`;
 }
+// Round clock face: 60 tick marks, 12 bold hour marks, and the four main numbers
+(function buildAnalog(){
+  const pt=(deg,r)=>{ const a=deg*Math.PI/180; return [(100+r*Math.sin(a)).toFixed(2),(100-r*Math.cos(a)).toFixed(2)]; };
+  let ticks='';
+  for(let i=0;i<60;i++){ const big=i%5===0, [x1,y1]=pt(i*6,big?82:88), [x2,y2]=pt(i*6,94); ticks+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="tk${big?' big':''}"/>`; }
+  const nums=[[12,0],[3,90],[6,180],[9,270]].map(([n,d])=>{ const [x,y]=pt(d,68); return `<text x="${x}" y="${y}" class="num">${n}</text>`; }).join('');
+  $('#analog').innerHTML=`<circle cx="100" cy="100" r="98" class="face"/>${ticks}${nums}
+    <line id="hHand" x1="100" y1="112" x2="100" y2="54" class="hand h"/>
+    <line id="mHand" x1="100" y1="114" x2="100" y2="30" class="hand m"/>
+    <g id="sHand"><line x1="100" y1="122" x2="100" y2="20" class="hand s"/><circle cx="100" cy="100" r="5" class="sdot"/></g>
+    <circle cx="100" cy="100" r="2.4" class="pin"/>`;
+})();
+function moveHands(){
+  requestAnimationFrame(moveHands);
+  if(!$('#analog').getClientRects().length) return;          // only while the clock face is on screen
+  const n=new Date(), s=n.getSeconds()+n.getMilliseconds()/1000, m=n.getMinutes()+s/60, h=(n.getHours()%12)+m/60;
+  $('#hHand').setAttribute('transform',`rotate(${h*30} 100 100)`);
+  $('#mHand').setAttribute('transform',`rotate(${m*6} 100 100)`);
+  $('#sHand').setAttribute('transform',`rotate(${s*6} 100 100)`);
+}
+requestAnimationFrame(moveHands);
+try{ $('#clockZone').textContent=Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop().replace(/_/g,' ')+' time'; }catch{}
 
 /* ================= Reminder engine ================= */
 let fired=store.get('fired',{});
@@ -1481,7 +1523,7 @@ onView.friends=()=>refreshFriends();
 /* ================= Start up ================= */
 renderAll(); renderTones(); updateToneLabels(); drawTimer(); swUI(); tickClock(); notifUI();
 renderProfileEditor(); renderRingOpts(); renderMyCard(); renderFriends();
-setInterval(tickClock,1000); setInterval(checkReminders,10000); checkReminders();
+setInterval(tickClock,250); setInterval(checkReminders,10000); checkReminders();
 setInterval(()=>{ renderUpNext(); if(Cloud.on&&$('#view-friends').classList.contains('active')) refreshFriends(); },60000);
 
 { const p=new URLSearchParams(location.search).get('add');
