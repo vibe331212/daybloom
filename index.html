@@ -75,6 +75,9 @@ body.scenes .card,body.scenes .rail,body.scenes .theme{background:color-mix(in o
   color:var(--muted);font-size:11px;font-weight:600;transition:.2s}
 .tab:hover{color:var(--text);background:var(--c-surface2)}
 .tab.active{color:var(--accent);background:color-mix(in oklab,var(--accent) 14%,transparent)}
+.tab{position:relative}
+.tab-dot{position:absolute;top:4px;left:calc(50% + 6px);min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:#ff5a6a;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;line-height:1}
+[hidden]{display:none!important}
 main{padding:28px clamp(16px,3vw,40px) 110px;max-width:1240px;width:100%;margin:0 auto;min-width:0}
 .cal-wrap>*,.clock-grid>*,.friends-grid>*,.settings-grid>*,.stack>*{min-width:0}
 .view{display:none;animation:fade .35s ease}
@@ -266,6 +269,33 @@ textarea.inp{resize:vertical;min-height:70px}
 .notice svg{color:var(--accent);margin-top:1px}
 .qr-box{background:#fff;padding:16px;border-radius:18px;display:inline-block;margin:18px auto}
 .qr-box img,.qr-box canvas{display:block;width:220px;height:220px}
+.avatar.group{background:color-mix(in oklab,var(--accent) 20%,var(--c-surface2));color:var(--accent)}
+.avatar.group svg{width:46%;height:46%}
+.chat-row .fn span{max-width:100%}
+.chat-row.unread .fn span{color:var(--text);font-weight:600}
+.chat-meta{display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;flex:none}
+.udot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+.modal.chat-sheet{width:min(560px,100%);padding:16px 16px 12px}
+.chat{display:flex;flex-direction:column;height:min(80vh,700px)}
+.chat-top{padding-bottom:12px;border-bottom:1px solid var(--border)}
+.chat-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-msgs{flex:1;overflow-y:auto;padding:12px 2px;display:flex;flex-direction:column;gap:4px;overscroll-behavior:contain}
+.bub{max-width:78%;padding:9px 13px;border-radius:18px;font-size:15px;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
+.bub.me{align-self:flex-end;background:var(--accent);color:var(--on-accent);border-bottom-right-radius:6px}
+.bub.them{align-self:flex-start;background:var(--c-surface2);border:1px solid var(--border);border-bottom-left-radius:6px}
+.bub.pending{opacity:.55}
+.bub-time{font-size:11px;color:var(--muted);text-align:center;margin:10px 0 4px;font-weight:600}
+.bub-who{font-size:11px;color:var(--muted);margin:8px 0 0 8px;font-weight:600}
+.chat-input{display:flex;gap:8px;align-items:flex-end;padding-top:10px;border-top:1px solid var(--border)}
+.chat-input textarea{resize:none;min-height:44px;max-height:120px;border-radius:22px;padding:11px 16px;line-height:1.35}
+.chat-input .send{width:44px;height:44px;flex:none}
+.chat-input .send svg{width:20px;height:20px}
+.pick-list{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto}
+.pick{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:12px;cursor:pointer}
+.pick:hover{background:var(--c-surface2)}
+.pick input{width:20px;height:20px;accent-color:var(--accent);flex:none}
+.pick b{display:block;font-size:15px}
+.pick .u{font-size:12px;color:var(--muted)}
 .status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;padding:6px 11px;border-radius:999px;background:var(--c-surface2);border:1px solid var(--border);color:var(--muted)}
 .status i{width:8px;height:8px;border-radius:50%;background:var(--muted)}
 .status.on i{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.25)}
@@ -378,7 +408,7 @@ html.locked body{overflow:hidden}
     <div class="logo" title="Daybloom"><img src="icon.svg" alt="Daybloom" width="44" height="44"></div>
     <button class="tab active" data-view="calendar"><svg class="i" data-icon="calendar"></svg>Calendar</button>
     <button class="tab" data-view="clock"><svg class="i" data-icon="clock"></svg>Clock</button>
-    <button class="tab" data-view="friends"><svg class="i" data-icon="users"></svg>Friends</button>
+    <button class="tab" data-view="friends"><svg class="i" data-icon="users"></svg>Friends<span class="tab-dot" id="chatDot" hidden></span></button>
     <button class="tab" data-view="settings"><svg class="i" data-icon="sliders"></svg>Settings</button>
   </nav>
 
@@ -509,12 +539,21 @@ html.locked body{overflow:hidden}
             </form>
           </div>
         </div>
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-            <div><h2>Your friends</h2><div class="sub" id="friendCount"></div></div>
-            <button class="icon-btn" id="refreshFriends" aria-label="Refresh"><svg class="i" data-icon="reset"></svg></button>
+        <div class="stack">
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div><h2>Chats</h2><div class="sub">Private. Only the people in a chat can read it.</div></div>
+              <button class="btn ghost" id="newGroup" style="padding:9px 14px;flex:none"><svg class="i" data-icon="users"></svg>New group</button>
+            </div>
+            <div class="ev-list" id="chatList"></div>
           </div>
-          <div class="ev-list" id="friendList"></div>
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div><h2>Your friends</h2><div class="sub" id="friendCount"></div></div>
+              <button class="icon-btn" id="refreshFriends" aria-label="Refresh"><svg class="i" data-icon="reset"></svg></button>
+            </div>
+            <div class="ev-list" id="friendList"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -673,6 +712,9 @@ const ICONS = {
   share:'<path d="M12 15V4M8 7.5l4-4 4 4"/><path d="M7 11H6.5A2.5 2.5 0 0 0 4 13.5v4A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-4a2.5 2.5 0 0 0-2.5-2.5H17"/>',
   qr:'<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><path d="M13.5 13.5h3v3h-3zM17.5 17.5h2.5V20h-2.5zM17.5 13.5H20M13.5 20h2"/>',
   cloud:'<path d="M7 18.5a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.4 1.6 3.8 3.8 0 0 1-.3 7.4z"/>',
+  chat:'<path d="M20 11.5c0 4-3.6 7-8 7-1.2 0-2.3-.2-3.3-.6L4.5 19.5l1.2-3.4C4.6 14.9 4 13.3 4 11.5c0-4 3.6-7 8-7s8 3 8 7Z"/>',
+  send:'<path d="M4.5 11.8 19.5 5l-5.6 14.5-3-5.6Z"/><path d="m10.9 13.9 8.6-8.9"/>',
+  logout:'<path d="M14 5H7.5A2.5 2.5 0 0 0 5 7.5v9A2.5 2.5 0 0 0 7.5 19H14"/><path d="M11 12h9M17 8.5l3.5 3.5-3.5 3.5"/>',
   globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5c-2.6-2.4-3.9-5.2-3.9-8.5s1.3-6.1 3.9-8.5Z"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
   moon:'<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5Z"/>',
@@ -1106,7 +1148,7 @@ $('#todayBtn').onclick=()=>{ selected=new Date(); selected.setHours(0,0,0,0); vi
 
 /* ================= Modals ================= */
 const openScrim=id=>$(id).classList.add('open'), closeScrim=id=>$(id).classList.remove('open');
-['#evScrim','#sheetScrim'].forEach(id=>$(id).addEventListener('click',e=>{ if(e.target.id===id.slice(1)) closeScrim(id); }));
+['#evScrim','#sheetScrim'].forEach(id=>$(id).addEventListener('click',e=>{ if(e.target.id===id.slice(1)){ closeScrim(id); if(id==='#sheetScrim') Chat.open=null; } }));
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeScrim('#evScrim'); closeScrim('#sheetScrim'); } });
 function ask(title,body,okText='OK',danger=false){
   return new Promise(res=>{
@@ -1526,7 +1568,31 @@ function supabaseApi({supabaseUrl,supabaseKey}){
     async addFriend(code){ return ok(await sb.rpc('add_friend',{p_code:code})); },
     async removeFriend(id){ ok(await sb.rpc('remove_friend',{p_friend:id})); },
     async newCode(){ return ok(await sb.rpc('new_code')); },
-    async signOut(){ await sb.auth.signOut(); }
+    async signOut(){ await sb.auth.signOut(); },
+    async chats(){
+      const convIds=ok(await sb.from('conversation_members').select('conversation_id').eq('user_id',uid)).map(r=>r.conversation_id);
+      if(!convIds.length) return [];
+      const [convs,members,msgs]=await Promise.all([
+        sb.from('conversations').select('id,is_group,name,last_message_at').in('id',convIds).then(ok),
+        sb.from('conversation_members').select('conversation_id,user_id').in('conversation_id',convIds).then(ok),
+        sb.from('messages').select('id,conversation_id,sender,body,created_at').in('conversation_id',convIds).order('created_at',{ascending:false}).limit(300).then(ok)
+      ]);
+      const ids=[...new Set(members.map(m=>m.user_id))];
+      const byId=Object.fromEntries(ok(await sb.from('profiles').select('id,name,username,shirt,style').in('id',ids)).map(p=>[p.id,p]));
+      return convs.map(c=>({...c,
+        members:members.filter(m=>m.conversation_id===c.id).map(m=>byId[m.user_id]||{id:m.user_id,name:'Someone'}),
+        last:msgs.find(m=>m.conversation_id===c.id)||null
+      })).sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at));
+    },
+    async messages(conv){ return ok(await sb.from('messages').select('id,conversation_id,sender,body,created_at').eq('conversation_id',conv).order('created_at',{ascending:false}).limit(150)).reverse(); },
+    async send(conv,body){ return ok(await sb.from('messages').insert({conversation_id:conv,body}).select('id,conversation_id,sender,body,created_at').single()); },
+    async startChat(friend){ return ok(await sb.rpc('start_chat',{p_friend:friend})); },
+    async createGroup(name,ids){ return ok(await sb.rpc('create_group',{p_name:name,p_members:ids})); },
+    async leaveChat(conv){ ok(await sb.rpc('leave_chat',{p_conv:conv})); },
+    listen(onMsg){
+      const ch=sb.channel('daybloom-messages').on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},p=>onMsg(p.new)).subscribe();
+      return ()=>sb.removeChannel(ch);
+    }
   };
 }
 
@@ -1552,7 +1618,9 @@ async function startCloud(api){
     if(!profile.name && Cloud.me.name && Cloud.me.name!=='Me'){ profile.name=Cloud.me.name; store.set('profile',profile); renderProfileEditor(); }
     await api.saveProfile(profile);
     await pushEvents();
-    renderMyCard(); await refreshFriends();
+    renderMyCard(); await refreshFriends(); await refreshChats();
+    try{ api.listen(onNewMessage); }catch{}
+    setInterval(pollChats,15000);
     if(pendingAdd){ const c=pendingAdd; pendingAdd=null; try{ sessionStorage.removeItem('si.pendingAdd'); }catch{} offerAdd(c); }
   }catch(e){
     if(e.message==='signed-out'){ endSession(); return; }
@@ -1577,6 +1645,7 @@ $('#shareCode').onclick=async()=>{
   else { try{ await navigator.clipboard.writeText(text+' '+shareUrl()); toast('Link copied','Send it to your friend'); }catch{} }
 };
 $('#showQr').onclick=()=>{
+  $('#sheet').classList.remove('chat-sheet'); Chat.open=null;
   $('#sheet').innerHTML=`<div class="modal-top"><h2>Your code</h2><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
     <div style="text-align:center">
       <div style="margin-top:14px;display:flex;justify-content:center">${avatar(profile,72)}</div>
@@ -1635,7 +1704,12 @@ function openFriend(f){
   $('#sheet').innerHTML=`<div class="modal-top"><div style="display:flex;gap:12px;align-items:center">${avatar(f,52)}<div><h2>${esc(f.name)}</h2><div class="sub" style="margin:0">${f.username?'@'+esc(f.username)+' · ':''}Next 2 weeks</div></div></div>
       <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
     <div class="ev-list">${body||`<div class="empty">${icon('sparkle')}<div>${esc(f.name)} has nothing shared for the next 2 weeks.</div></div>`}</div>
-    <div class="modal-actions"><button class="btn danger" id="unfriend">${icon('trash')}Remove friend</button></div>`;
+    <div class="modal-actions"><button class="btn danger" id="unfriend">${icon('trash')}Remove friend</button><button class="btn primary" id="msgFriend">${icon('chat')}Message</button></div>`;
+  $('#sheet').classList.remove('chat-sheet'); Chat.open=null;
+  $('#msgFriend').onclick=async()=>{
+    try{ const id=await Cloud.api.startChat(f.id); await refreshChats(); openChat(id); }
+    catch(e){ toast('Could not start chat',e.message,'x'); }
+  };
   $('#sheet [data-close]').onclick=()=>closeScrim('#sheetScrim');
   $('#unfriend').onclick=async()=>{
     if(!await ask('Remove friend?',`You and ${f.name} will stop seeing each other's schedules.`,'Remove',true)) return;
@@ -1644,7 +1718,130 @@ function openFriend(f){
   openScrim('#sheetScrim');
 }
 $('#refreshFriends').onclick=()=>refreshFriends();
-onView.friends=()=>refreshFriends();
+onView.friends=()=>{ refreshFriends(); refreshChats(); };
+
+/* ================= Private chats ================= */
+const Chat={list:[],open:null,msgs:[],read:store.get('chatRead',{})};
+const chatOther=c=>c.members.find(m=>m.id!==Cloud.me?.id);
+const chatName=c=>c.is_group?(c.name||c.members.filter(m=>m.id!==Cloud.me?.id).map(m=>m.name).join(', ')||'Group'):(chatOther(c)?.name||'Chat');
+const isUnread=c=>!!(c.last&&c.last.sender!==Cloud.me?.id&&(!Chat.read[c.id]||c.last.created_at>Chat.read[c.id]));
+const chatAvatar=(c,size)=>c.is_group?`<span class="avatar group" style="width:${size}px;height:${size}px">${icon('users')}</span>`:avatar(chatOther(c)||{},size);
+function fmtMsgTime(iso){
+  const t=new Date(iso), today=new Date(); today.setHours(0,0,0,0);
+  const day=new Date(t); day.setHours(0,0,0,0); const diff=Math.round((today-day)/86400000);
+  return diff===0?fmtTime(`${pad(t.getHours())}:${pad(t.getMinutes())}`):diff===1?'Yesterday':`${MONTHS[t.getMonth()].slice(0,3)} ${t.getDate()}`;
+}
+function updateChatDot(){ const n=Cloud.on?Chat.list.filter(isUnread).length:0, d=$('#chatDot'); d.hidden=!n; d.textContent=n>9?'9+':String(n); }
+function renderChats(){
+  const el=$('#chatList');
+  if(!Cloud.on){ el.innerHTML=`<div class="empty" style="padding:18px 10px">Chats work once you're online.</div>`; updateChatDot(); return; }
+  el.innerHTML=Chat.list.length?Chat.list.map(c=>{
+    const l=c.last, who=!l?'':l.sender===Cloud.me.id?'You: ':c.is_group?`${c.members.find(m=>m.id===l.sender)?.name||'Someone'}: `:'';
+    return `<button class="friend chat-row${isUnread(c)?' unread':''}" data-id="${c.id}">${chatAvatar(c,48)}
+      <span class="fn"><b>${esc(chatName(c))}</b><span>${l?esc(who+l.body):'No messages yet'}</span></span>
+      <span class="chat-meta">${l?fmtMsgTime(l.created_at):''}${isUnread(c)?'<i class="udot"></i>':''}</span></button>`;
+  }).join(''):`<div class="empty" style="padding:22px 10px">${icon('chat')}<div>No chats yet. Tap a friend and press Message, or start a group.</div></div>`;
+  el.querySelectorAll('.chat-row').forEach(b=>b.onclick=()=>openChat(b.dataset.id));
+  updateChatDot();
+}
+async function refreshChats(){
+  if(!Cloud.on) return renderChats();
+  try{ Chat.list=await Cloud.api.chats(); }catch(e){ toast('Could not load chats',e.message,'cloud'); }
+  renderChats();
+}
+const chatIsShowing=()=>Chat.open&&$('#sheetScrim').classList.contains('open')&&$('#chatMsgs');
+function markRead(c){ if(c?.last){ Chat.read[c.id]=c.last.created_at; store.set('chatRead',Chat.read); } renderChats(); }
+function renderMsgs(){
+  const c=Chat.list.find(x=>x.id===Chat.open), el=$('#chatMsgs'); if(!c||!el) return;
+  if(!Chat.msgs.length){ el.innerHTML=`<div class="empty" style="margin:auto">${icon('chat')}<div>Say hi! Only the people in this chat can see these messages.</div></div>`; return; }
+  let html='', prev=null;
+  for(const m of Chat.msgs){
+    const t=new Date(m.created_at), mine=m.sender===Cloud.me.id;
+    if(!prev||t-new Date(prev.created_at)>15*60000) html+=`<div class="bub-time">${fmtMsgTime(m.created_at)}${fmtMsgTime(m.created_at).includes(':')?'':', '+fmtTime(`${pad(t.getHours())}:${pad(t.getMinutes())}`)}</div>`;
+    if(c.is_group&&!mine&&(!prev||prev.sender!==m.sender)) html+=`<div class="bub-who">${esc(c.members.find(x=>x.id===m.sender)?.name||'Someone')}</div>`;
+    html+=`<div class="bub ${mine?'me':'them'}${m.pending?' pending':''}">${esc(m.body)}</div>`;
+    prev=m;
+  }
+  el.innerHTML=html; el.scrollTop=el.scrollHeight;
+}
+async function openChat(id){
+  const c=Chat.list.find(x=>x.id===id); if(!c) return;
+  Chat.open=id; Chat.msgs=[];
+  $('#sheet').classList.add('chat-sheet');
+  $('#sheet').innerHTML=`<div class="chat">
+    <div class="modal-top chat-top"><div style="display:flex;gap:12px;align-items:center;min-width:0">${chatAvatar(c,44)}
+      <div style="min-width:0"><h2 class="chat-title">${esc(chatName(c))}</h2><div class="sub" style="margin:0">${c.is_group?`${c.members.length} people`:'@'+esc(chatOther(c)?.username||'')}</div></div></div>
+      <div style="display:flex;gap:8px;flex:none">${c.is_group?`<button class="icon-btn" id="leaveChat" aria-label="Leave group">${icon('logout')}</button>`:''}<button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div></div>
+    <div class="chat-msgs" id="chatMsgs" aria-live="polite"><div class="empty" style="margin:auto">Loading...</div></div>
+    <form class="chat-input" id="chatForm"><textarea class="inp" id="chatText" rows="1" maxlength="1000" placeholder="Message" aria-label="Message"></textarea>
+      <button class="round go send" aria-label="Send">${icon('send')}</button></form></div>`;
+  $('#sheet [data-close]').onclick=()=>{ closeScrim('#sheetScrim'); Chat.open=null; };
+  if(c.is_group) $('#leaveChat').onclick=async()=>{
+    if(!await ask('Leave this group?',`You'll stop getting messages from "${chatName(c)}".`,'Leave',true)) return;
+    try{ await Cloud.api.leaveChat(c.id); closeScrim('#sheetScrim'); Chat.open=null; await refreshChats(); }catch(e){ toast('Could not leave',e.message,'x'); }
+  };
+  const ta=$('#chatText');
+  ta.oninput=()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,120)+'px'; };
+  ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey&&!('ontouchstart' in window)){ e.preventDefault(); $('#chatForm').requestSubmit(); } };
+  $('#chatForm').onsubmit=e=>{ e.preventDefault(); sendChat(); };
+  openScrim('#sheetScrim');
+  try{ Chat.msgs=await Cloud.api.messages(id); }catch(e){ toast('Could not load messages',e.message,'cloud'); }
+  if(Chat.open!==id) return;
+  renderMsgs(); markRead(c);
+}
+async function sendChat(){
+  const ta=$('#chatText'), body=ta.value.trim(), conv=Chat.open; if(!body||!conv) return;
+  ta.value=''; ta.style.height='';
+  const tmp={id:'tmp-'+uuid(),conversation_id:conv,sender:Cloud.me.id,body,created_at:new Date().toISOString(),pending:true};
+  Chat.msgs.push(tmp); renderMsgs();
+  try{
+    const m=await Cloud.api.send(conv,body);
+    Chat.msgs=Chat.msgs.filter(x=>x!==tmp); if(!Chat.msgs.some(x=>x.id===m.id)) Chat.msgs.push(m);
+    const c=Chat.list.find(x=>x.id===conv); if(c){ c.last=m; c.last_message_at=m.created_at; Chat.list.sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at)); }
+  }catch(e){
+    Chat.msgs=Chat.msgs.filter(x=>x!==tmp); ta.value=body;
+    toast('Not sent',/row-level security/i.test(e.message)?"You can only message people who are still your friends.":e.message,'x');
+  }
+  if(Chat.open===conv) renderMsgs(); renderChats();
+}
+function onNewMessage(m){
+  const c=Chat.list.find(x=>x.id===m.conversation_id);
+  if(!c){ refreshChats().then(()=>{ if(m.sender!==Cloud.me.id) toast('New chat',m.body.slice(0,80),'chat'); }); return; }
+  c.last=m; c.last_message_at=m.created_at; Chat.list.sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at));
+  if(chatIsShowing()&&Chat.open===m.conversation_id){
+    if(!Chat.msgs.some(x=>x.id===m.id)&&!(m.sender===Cloud.me.id&&Chat.msgs.some(x=>x.pending&&x.body===m.body))){ Chat.msgs.push(m); renderMsgs(); }
+    markRead(c); return;
+  }
+  if(m.sender!==Cloud.me.id) toast(c.members.find(x=>x.id===m.sender)?.name||'A friend',m.body.slice(0,80),'chat');
+  renderChats();
+}
+// Backup in case live updates miss something (for example after the phone was asleep)
+async function pollChats(){
+  if(!Cloud.on||document.hidden) return;
+  await refreshChats();
+  if(chatIsShowing()){ const id=Chat.open; try{ const fresh=await Cloud.api.messages(id); if(Chat.open===id&&fresh.length!==Chat.msgs.filter(x=>!x.pending).length){ Chat.msgs=fresh; renderMsgs(); } }catch{} }
+}
+$('#newGroup').onclick=async()=>{
+  if(!Cloud.on) return toast('Not online','Chats work once you are online','cloud');
+  await refreshFriends();
+  if(!Cloud.friends.length) return toast('Add friends first','Group chats are made from your friends','users');
+  Chat.open=null; $('#sheet').classList.remove('chat-sheet');
+  $('#sheet').innerHTML=`<div class="modal-top"><h2>New group chat</h2><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
+    <div class="field"><label for="grpName">Group name</label><input class="inp" id="grpName" maxlength="40" placeholder="Soccer team"></div>
+    <div class="field"><label>Pick friends</label><div class="pick-list">${[...Cloud.friends].sort((a,b)=>a.name.localeCompare(b.name)).map(f=>`<label class="pick"><input type="checkbox" value="${f.id}">${avatar(f,40)}<span><b>${esc(f.name)}</b><span class="u">@${esc(f.username||'')}</span></span></label>`).join('')}</div></div>
+    <div class="gate-err" id="grpErr" role="alert"></div>
+    <div class="modal-actions" style="justify-content:flex-end;margin-top:8px"><button class="btn primary" id="grpGo">${icon('chat')}Start group</button></div>`;
+  $('#sheet [data-close]').onclick=()=>closeScrim('#sheetScrim');
+  $('#grpGo').onclick=async()=>{
+    const ids=[...document.querySelectorAll('.pick input:checked')].map(i=>i.value);
+    if(!ids.length){ $('#grpErr').textContent='Pick at least one friend'; return; }
+    $('#grpGo').disabled=true;
+    try{ const id=await Cloud.api.createGroup($('#grpName').value.trim(),ids); await refreshChats(); openChat(id); }
+    catch(e){ $('#grpErr').textContent=e.message; $('#grpGo').disabled=false; }
+  };
+  openScrim('#sheetScrim'); setTimeout(()=>$('#grpName').focus(),50);
+};
+renderChats();
 
 /* ================= Start up ================= */
 renderAll(); renderTones(); updateToneLabels(); drawTimer(); swUI(); tickClock(); notifUI();

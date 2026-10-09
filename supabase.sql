@@ -169,3 +169,144 @@ grant  execute on function public.ensure_profile(text, text, text)  to authentic
 grant  execute on function public.add_friend(text)                  to authenticated;
 grant  execute on function public.remove_friend(uuid)               to authenticated;
 grant  execute on function public.new_code()                        to authenticated;
+
+-- ---------- Private chats between friends ----------
+create table if not exists public.conversations (
+  id uuid primary key default gen_random_uuid(),
+  is_group boolean not null default false,
+  name text check (name is null or char_length(name) between 1 and 40),
+  created_by uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  last_message_at timestamptz not null default now()
+);
+create table if not exists public.conversation_members (
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  primary key (conversation_id, user_id)
+);
+create index if not exists conversation_members_user_idx on public.conversation_members(user_id);
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  sender uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  body text not null check (char_length(btrim(body)) between 1 and 1000),
+  created_at timestamptz not null default now()
+);
+create index if not exists messages_conversation_idx on public.messages(conversation_id, created_at);
+
+alter table public.conversations        enable row level security;
+alter table public.conversation_members enable row level security;
+alter table public.messages             enable row level security;
+
+revoke all on public.conversations        from anon, authenticated;
+revoke all on public.conversation_members from anon, authenticated;
+revoke all on public.messages             from anon, authenticated;
+grant select on public.conversations        to authenticated;
+grant select on public.conversation_members to authenticated;
+grant select on public.messages             to authenticated;
+grant insert (conversation_id, body) on public.messages to authenticated;   -- sender and time are filled in by the database
+
+create or replace function public.is_member(conv uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.conversation_members where conversation_id = conv and user_id = auth.uid());
+$$;
+
+create or replace function public.shares_chat(other uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.conversation_members a join public.conversation_members b using (conversation_id)
+                 where a.user_id = auth.uid() and b.user_id = other);
+$$;
+
+-- In a one-on-one chat you can only post while you're still friends
+create or replace function public.can_post(conv uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select public.is_member(conv) and (
+    (select is_group from public.conversations where id = conv)
+    or exists (select 1 from public.conversation_members m where m.conversation_id = conv and m.user_id <> auth.uid() and public.is_friend(m.user_id))
+  );
+$$;
+
+drop policy if exists "conversations: members" on public.conversations;
+create policy "conversations: members" on public.conversations for select to authenticated using (public.is_member(id));
+drop policy if exists "conversation_members: members" on public.conversation_members;
+create policy "conversation_members: members" on public.conversation_members for select to authenticated using (public.is_member(conversation_id));
+drop policy if exists "messages: members read" on public.messages;
+create policy "messages: members read" on public.messages for select to authenticated using (public.is_member(conversation_id));
+drop policy if exists "messages: members post" on public.messages;
+create policy "messages: members post" on public.messages for insert to authenticated
+  with check (sender = auth.uid() and public.can_post(conversation_id));
+
+-- People in a group chat can see each other's name and animal even if they aren't friends
+drop policy if exists "profiles: me and my friends" on public.profiles;
+create policy "profiles: me and my friends" on public.profiles for select to authenticated
+  using (id = auth.uid() or public.is_friend(id) or public.shares_chat(id));
+
+create or replace function public.touch_conversation()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  update public.conversations set last_message_at = new.created_at where id = new.conversation_id;
+  return new;
+end $$;
+drop trigger if exists messages_touch on public.messages;
+create trigger messages_touch after insert on public.messages for each row execute function public.touch_conversation();
+
+create or replace function public.start_chat(p_friend uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare conv uuid;
+begin
+  if not public.is_friend(p_friend) then raise exception 'You can only chat with friends'; end if;
+  select c.id into conv from public.conversations c
+   where not c.is_group
+     and exists (select 1 from public.conversation_members where conversation_id = c.id and user_id = auth.uid())
+     and exists (select 1 from public.conversation_members where conversation_id = c.id and user_id = p_friend)
+   limit 1;
+  if conv is null then
+    insert into public.conversations (is_group) values (false) returning id into conv;
+    insert into public.conversation_members (conversation_id, user_id) values (conv, auth.uid()), (conv, p_friend);
+  end if;
+  return conv;
+end $$;
+
+create or replace function public.create_group(p_name text, p_members uuid[])
+returns uuid language plpgsql security definer set search_path = public as $$
+declare conv uuid; m uuid;
+begin
+  if coalesce(array_length(p_members, 1), 0) < 1 then raise exception 'Pick at least one friend'; end if;
+  if array_length(p_members, 1) > 20 then raise exception 'Groups can have up to 20 friends'; end if;
+  foreach m in array p_members loop
+    if not public.is_friend(m) then raise exception 'Everyone in a group has to be your friend'; end if;
+  end loop;
+  insert into public.conversations (is_group, name) values (true, nullif(left(btrim(p_name), 40), '')) returning id into conv;
+  insert into public.conversation_members (conversation_id, user_id)
+    select conv, u from unnest(array_append(p_members, auth.uid())) as u on conflict do nothing;
+  return conv;
+end $$;
+
+create or replace function public.leave_chat(p_conv uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.conversation_members where conversation_id = p_conv and user_id = auth.uid();
+  delete from public.conversations c where c.id = p_conv
+    and not exists (select 1 from public.conversation_members where conversation_id = c.id);
+end $$;
+
+revoke execute on function public.is_member(uuid)               from public, anon;
+revoke execute on function public.shares_chat(uuid)             from public, anon;
+revoke execute on function public.can_post(uuid)                from public, anon;
+revoke execute on function public.touch_conversation()          from public, anon, authenticated;
+revoke execute on function public.start_chat(uuid)              from public, anon;
+revoke execute on function public.create_group(text, uuid[])    from public, anon;
+revoke execute on function public.leave_chat(uuid)              from public, anon;
+grant  execute on function public.is_member(uuid)               to authenticated;
+grant  execute on function public.shares_chat(uuid)             to authenticated;
+grant  execute on function public.can_post(uuid)                to authenticated;
+grant  execute on function public.start_chat(uuid)              to authenticated;
+grant  execute on function public.create_group(text, uuid[])    to authenticated;
+grant  execute on function public.leave_chat(uuid)              to authenticated;
+
+-- Live delivery of new messages (each person still only receives chats they're in)
+do $$ begin
+  alter publication supabase_realtime add table public.messages;
+exception when duplicate_object then null;
+end $$;
