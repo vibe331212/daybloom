@@ -62,6 +62,9 @@ svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stro
 /* ---------- Layout ---------- */
 .app{display:grid;grid-template-columns:88px 1fr;min-height:100vh;position:relative;z-index:1}
 #scene{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+/* Frosted strip behind the iPhone status bar so scrolled content doesn't show through the clock and battery */
+.status-shade{position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);z-index:45;pointer-events:none;
+  background:color-mix(in oklab,var(--c-bg) 72%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 /* With a moving scene on, panels turn to frosted glass so the scene shows through softly */
 body.scenes .card,body.scenes .rail,body.scenes .theme{background:color-mix(in oklab,var(--c-surface) 82%,transparent);
   backdrop-filter:blur(14px) saturate(1.15);-webkit-backdrop-filter:blur(14px) saturate(1.15)}
@@ -475,6 +478,7 @@ html.locked body{overflow:hidden}
 </head>
 <body>
 <canvas id="scene" aria-hidden="true"></canvas>
+<div class="status-shade" aria-hidden="true"></div>
 <div class="app">
   <nav class="rail">
     <div class="logo" title="Daybloom"><img src="icon.svg" alt="Daybloom" width="44" height="44"></div>
@@ -1817,7 +1821,13 @@ async function startCloud(api){
   try{
     Cloud.me=await api.init(profile);
     Cloud.on=true; setStatus('on','Online');
-    if(!profile.name && Cloud.me.name && Cloud.me.name!=='Me'){ profile.name=Cloud.me.name; store.set('profile',profile); renderProfileEditor(); }
+    // First time online on this device: use the profile saved online instead of this device's defaults
+    if(!store.get('profileSynced',false)){
+      if(Cloud.me.name) profile.name=Cloud.me.name;
+      if(Cloud.me.shirt) profile.shirt=Cloud.me.shirt;
+      profile.style=animalOf({style:Cloud.me.style});
+      store.set('profile',profile); store.set('profileSynced',true); renderProfileEditor();
+    }
     await api.saveProfile(profile);
     await syncEvents();
     await refreshBlocks();
