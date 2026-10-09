@@ -37,6 +37,16 @@ create table if not exists public.events (
 );
 create index if not exists events_owner_idx on public.events(owner);
 
+-- Animal avatars (the old shirt styles are still accepted so older accounts keep working)
+alter table public.profiles drop constraint if exists profiles_style_check;
+alter table public.profiles add constraint profiles_style_check check (style in
+  ('fox','wolf','bear','mouse','cat','rabbit','panda','owl','raccoon','lion',
+   'classic','stripes','pocket','star','bolt'));
+alter table public.profiles alter column style set default 'fox';
+
+-- All-day events
+alter table public.events add column if not exists all_day boolean not null default false;
+
 -- Usernames (people sign up with a username and password)
 alter table public.profiles add column if not exists username text unique
   check (username ~ '^[a-z0-9_]{3,20}$');
@@ -113,7 +123,7 @@ begin
   if not found then
     insert into public.profiles (id, name, username, shirt, style, code)
     values (auth.uid(), coalesce(nullif(left(trim(p_name), 30), ''), uname), uname,
-            coalesce(p_shirt, '#7c5cff'), coalesce(p_style, 'classic'), public.new_friend_code())
+            coalesce(p_shirt, '#7c5cff'), coalesce(p_style, 'fox'), public.new_friend_code())
     returning * into me;
   elsif me.username is null then
     update public.profiles set username = uname where id = auth.uid() returning * into me;

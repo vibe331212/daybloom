@@ -145,6 +145,11 @@ textarea.inp{resize:vertical;min-height:70px}
 .swatch{width:30px;height:30px;border-radius:50%;border:2px solid transparent;outline:2px solid transparent;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15);transition:.15s}
 .swatch.on{outline-color:var(--text);border-color:var(--c-surface)}
 .hint{font-size:12px;color:var(--muted);margin-top:4px}
+.allday-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;padding:12px 14px;border-radius:12px;background:var(--c-surface2);border:1px solid var(--border)}
+.allday-row .k{font-weight:600;font-size:14px}
+.allday-row .v{font-size:12px;color:var(--muted);margin-top:1px}
+.row2.one{grid-template-columns:1fr}
+.ev .t.allday{color:var(--accent)}
 .modal-actions{display:flex;justify-content:space-between;gap:10px;margin-top:24px;flex-wrap:wrap}
 
 /* ---------- Clock ---------- */
@@ -204,7 +209,7 @@ textarea.inp{resize:vertical;min-height:70px}
 
 /* ---------- Friends ---------- */
 .friends-grid{display:grid;grid-template-columns:minmax(300px,1fr) minmax(0,1.4fr);gap:22px;align-items:start}
-.avatar{border-radius:50%;background:var(--c-surface2);display:grid;place-items:center;flex:none;border:1px solid var(--border)}
+.avatar{border-radius:50%;background:var(--c-surface2);display:grid;place-items:center;flex:none;border:1px solid var(--border);overflow:hidden}
 .me-card{text-align:center;display:flex;flex-direction:column;align-items:center}
 .me-name{font-size:20px;font-weight:700;margin-top:12px}
 .code{font-size:clamp(28px,4vw,36px);font-weight:800;letter-spacing:.12em;font-variant-numeric:tabular-nums;margin:6px 0 18px;
@@ -233,7 +238,7 @@ textarea.inp{resize:vertical;min-height:70px}
 .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .prof{display:flex;gap:18px;align-items:center}
 .styles{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
-.style-opt{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:12px;border:1px solid var(--border);background:var(--c-surface2);font-size:11px;font-weight:600;color:var(--muted)}
+.style-opt{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 4px;border-radius:12px;border:1px solid var(--border);background:var(--c-surface2);font-size:11px;font-weight:600;color:var(--muted)}
 .style-opt.on{border-color:var(--accent);color:var(--text)}
 .themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
 .theme{border-radius:16px;padding:12px;border:2px solid var(--border);text-align:left;transition:.15s;background:var(--c-surface)}
@@ -473,13 +478,13 @@ html.locked body{overflow:hidden}
       <div class="settings-grid">
         <div class="card">
           <h2>Your profile</h2>
-          <div class="sub">Friends see your name and shirt</div>
+          <div class="sub">Friends see your name and animal</div>
           <div class="prof" style="margin-top:18px">
             <div id="profPreview"></div>
             <div class="field" style="flex:1;margin:0"><label for="profName">Name</label><input class="inp" id="profName" maxlength="30" placeholder="Your name"></div>
           </div>
-          <div class="field"><label>Shirt color</label><div class="chips" id="shirtColors"></div></div>
-          <div class="field"><label>Shirt style</label><div class="styles" id="shirtStyles"></div></div>
+          <div class="field"><label>Animal</label><div class="styles" id="shirtStyles"></div></div>
+          <div class="field"><label>Background color</label><div class="chips" id="shirtColors"></div></div>
         </div>
         <div class="card">
           <h2>Reminders</h2>
@@ -540,9 +545,13 @@ html.locked body{overflow:hidden}
       <button type="button" class="icon-btn" id="evClose" aria-label="Close"><svg class="i" data-icon="x"></svg></button>
     </div>
     <div class="field"><label for="fTitle">Title</label><input class="inp" id="fTitle" required maxlength="120" placeholder="What's happening?"></div>
-    <div class="row2">
+    <div class="allday-row">
+      <div><div class="k">All day</div><div class="v" id="fAllDayHint">Turn on if there's no set time</div></div>
+      <button type="button" class="switch" id="fAllDay" role="switch" aria-checked="false" aria-label="All day"><i></i></button>
+    </div>
+    <div class="row2" id="fWhenRow">
       <div class="field"><label for="fDate">Date</label><input class="inp" id="fDate" type="date" required></div>
-      <div class="field"><label for="fTime">Time</label><input class="inp" id="fTime" type="time" required></div>
+      <div class="field" id="fTimeWrap"><label for="fTime">Time</label><input class="inp" id="fTime" type="time" required></div>
     </div>
     <div class="field"><label for="fNotes">Notes</label><textarea class="inp" id="fNotes" maxlength="2000" placeholder="Write anything down"></textarea></div>
     <div class="field"><label>Repeat</label><div class="chips" id="fRepeat"></div><div class="hint" id="repeatHint"></div></div>
@@ -657,39 +666,107 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   store.set('view',b.dataset.view); onView[b.dataset.view]?.();
 });
 
-/* ================= Little shirt avatars ================= */
-const SHIRTS=['#7c5cff','#3b82f6','#06b6d4','#22c55e','#eab308','#f97316','#ef4444','#ec4899','#334155','#f1f5f9'];
-const STYLES=[['classic','Letter'],['stripes','Stripes'],['pocket','Pocket'],['star','Star'],['bolt','Bolt']];
-const SHIRT_PATH='M22 8 12 12 4 22 12 30 16 27V58H48V27L52 30 60 22 52 12 42 8C40 13 36.5 15.5 32 15.5S24 13 22 8Z';
-const initial = n => ((n||'').trim()[0]||'S').toUpperCase();
-let shirtN=0;
-function shirtSVG(color,style,letter,size){
-  const id='sh'+(shirtN++), h=color.replace('#',''), r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
-  const light=(.299*r+.587*g+.114*b)>170, ink=light?'rgba(20,20,35,.75)':'rgba(255,255,255,.92)', soft=light?'rgba(20,20,35,.18)':'rgba(255,255,255,.3)';
-  const deco={
-    classic:`<text x="32" y="45" text-anchor="middle" font-size="17" font-weight="800" font-family="Inter,system-ui,sans-serif" fill="${ink}">${esc(letter)}</text>`,
-    stripes:`<g clip-path="url(#${id})" stroke="${soft}" stroke-width="4.5">${[24,33,42,51].map(y=>`<path d="M0 ${y}H64"/>`).join('')}</g>`,
-    pocket:`<rect x="36" y="29" width="8.5" height="9" rx="2" fill="none" stroke="${ink}" stroke-width="2"/><path d="M36 32.5h8.5" stroke="${ink}" stroke-width="2"/>`,
-    star:`<path d="M32 25.5l3.2 6.4 7 1-5.1 5 1.2 7L32 41.6l-6.3 3.3 1.2-7-5.1-5 7-1z" fill="${ink}"/>`,
-    bolt:`<path d="M35 23 25 37.5h7L29.5 50 40 34.5h-7z" fill="${ink}"/>`
-  }[style]||'';
-  return `<svg viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true"><defs><clipPath id="${id}"><path d="${SHIRT_PATH}"/></clipPath></defs>
-    <path d="${SHIRT_PATH}" fill="${color}"/>${deco}
-    <path d="${SHIRT_PATH}" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="1.5" stroke-linejoin="round"/>
-    <path d="M22 8C24 13 28 15.5 32 15.5S40 13 42 8" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="2"/></svg>`;
-}
-const avatar = (p,size=44) => `<span class="avatar" style="width:${size}px;height:${size}px">${shirtSVG(p.shirt||SHIRTS[0],p.style||'classic',initial(p.name),Math.round(size*.74))}</span>`;
+/* ================= Animal avatars ================= */
+// The color someone picks fills the circle behind their animal (stored as "shirt" for older accounts)
+const BG_COLORS=['#7c5cff','#3b82f6','#06b6d4','#22c55e','#eab308','#f97316','#ef4444','#ec4899','#334155','#f1f5f9'];
+const EYE=(x,y)=>`<ellipse cx="${x}" cy="${y}" rx="2.6" ry="3" fill="#2a1c14"/><circle cx="${x+.9}" cy="${y-1.1}" r=".95" fill="#fff"/>`;
+const SMILE=(y,c)=>`<path d="M32 ${y}v2.4M29.2 ${y+3.2}q2.8 1.8 5.6 0" stroke="${c}" stroke-width="1.4" fill="none" stroke-linecap="round"/>`;
+const ANIMALS={
+  fox:{name:'Fox',art:`
+    <path d="M13 31 10 7 29 19Z" fill="#e8692a"/><path d="M51 31 54 7 35 19Z" fill="#e8692a"/>
+    <path d="M15.5 25 13.5 12 25 19.5Z" fill="#4a2a1a"/><path d="M48.5 25 50.5 12 39 19.5Z" fill="#4a2a1a"/>
+    <path d="M32 15C45 15 55 23 55 34 55 41 50 46 43 49L32 57 21 49C14 46 9 41 9 34 9 23 19 15 32 15Z" fill="#f2803a"/>
+    <path d="M10.5 37C17 40 25 41 32 46 39 41 47 40 53.5 37 51 45 42 51 32 57 22 51 13 45 10.5 37Z" fill="#fff3e6"/>
+    ${EYE(23.5,32)}${EYE(40.5,32)}<ellipse cx="32" cy="52.6" rx="3.4" ry="2.5" fill="#2a1c14"/>`},
+  wolf:{name:'Wolf',art:`
+    <path d="M14 30 13 5 29 17Z" fill="#6c7486"/><path d="M50 30 51 5 35 17Z" fill="#6c7486"/>
+    <path d="M16.5 24 15.8 11 25.5 17.8Z" fill="#d4d8e0"/><path d="M47.5 24 48.2 11 38.5 17.8Z" fill="#d4d8e0"/>
+    <path d="M32 14C44 14 53 22 53 32 53 40 48 46 42 50L32 58 22 50C16 46 11 40 11 32 11 22 20 14 32 14Z" fill="#7b8396"/>
+    <path d="M32 24C35 30 40 33 48 35 47 44 40 51 32 58 24 51 17 44 16 35 24 33 29 30 32 24Z" fill="#eef0f4"/>
+    <ellipse cx="23.5" cy="31" rx="3.1" ry="2.6" fill="#f2b33d"/><circle cx="23.7" cy="31" r="1.4" fill="#1d1f24"/>
+    <ellipse cx="40.5" cy="31" rx="3.1" ry="2.6" fill="#f2b33d"/><circle cx="40.3" cy="31" r="1.4" fill="#1d1f24"/>
+    <path d="M19.5 27.4 26.5 28.6M44.5 27.4 37.5 28.6" stroke="#4c5262" stroke-width="1.6" stroke-linecap="round"/>
+    <ellipse cx="32" cy="50" rx="3.6" ry="2.6" fill="#23252b"/>`},
+  bear:{name:'Bear',art:`
+    <circle cx="16" cy="19" r="8.5" fill="#7d4f31"/><circle cx="48" cy="19" r="8.5" fill="#7d4f31"/>
+    <circle cx="16" cy="19" r="4.5" fill="#c9966b"/><circle cx="48" cy="19" r="4.5" fill="#c9966b"/>
+    <circle cx="32" cy="36" r="21" fill="#94603c"/><ellipse cx="32" cy="45" rx="10.5" ry="8.5" fill="#e3c39d"/>
+    ${EYE(24,32)}${EYE(40,32)}<ellipse cx="32" cy="41" rx="4.2" ry="3" fill="#2a1c14"/>${SMILE(44,'#2a1c14')}`},
+  mouse:{name:'Mouse',art:`
+    <circle cx="15" cy="20" r="12" fill="#a8adb9"/><circle cx="49" cy="20" r="12" fill="#a8adb9"/>
+    <circle cx="15" cy="20" r="7.5" fill="#f4b3c2"/><circle cx="49" cy="20" r="7.5" fill="#f4b3c2"/>
+    <path d="M32 21C43 21 50 29 50 38 50 48 41 56 32 56 23 56 14 48 14 38 14 29 21 21 32 21Z" fill="#bcc1cc"/>
+    <circle cx="21.5" cy="44" r="3.2" fill="#f4b3c2" opacity=".7"/><circle cx="42.5" cy="44" r="3.2" fill="#f4b3c2" opacity=".7"/>
+    ${EYE(25.5,37)}${EYE(38.5,37)}<circle cx="32" cy="45.5" r="2.8" fill="#e8738c"/>
+    <path d="M27.5 46 16.5 43.5M27.5 47.6 16.5 49.2M36.5 46 47.5 43.5M36.5 47.6 47.5 49.2" stroke="#7a7f8a" stroke-width="1.1" stroke-linecap="round"/>
+    ${SMILE(48.2,'#7a7f8a')}`},
+  cat:{name:'Cat',art:`
+    <path d="M12 33 13 9 29 19Z" fill="#ef9a48"/><path d="M52 33 51 9 35 19Z" fill="#ef9a48"/>
+    <path d="M15 27 15.6 14 25 19.8Z" fill="#f9cfae"/><path d="M49 27 48.4 14 39 19.8Z" fill="#f9cfae"/>
+    <ellipse cx="32" cy="37" rx="21" ry="18" fill="#f4a95a"/>
+    <path d="M32 20v6.5M26.5 21.5l1 5M37.5 21.5l-1 5M11.5 36h5.5M12.5 41l4.5-1.5M52.5 36H47M51.5 41 47 39.5" stroke="#d97f30" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="28.6" cy="45" r="4.6" fill="#fff3e4"/><circle cx="35.4" cy="45" r="4.6" fill="#fff3e4"/>
+    <ellipse cx="24" cy="35" rx="3.2" ry="3.7" fill="#7cbf4a"/><ellipse cx="24" cy="35" rx="1" ry="2.8" fill="#1f2a14"/><circle cx="25" cy="33.7" r=".8" fill="#fff"/>
+    <ellipse cx="40" cy="35" rx="3.2" ry="3.7" fill="#7cbf4a"/><ellipse cx="40" cy="35" rx="1" ry="2.8" fill="#1f2a14"/><circle cx="41" cy="33.7" r=".8" fill="#fff"/>
+    <path d="M29.8 41.2h4.4L32 43.9Z" fill="#e97a8c" stroke="#e97a8c" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M24.5 45.2 13.5 43.6M24.5 47.2 14 49.2M39.5 45.2 50.5 43.6M39.5 47.2 50 49.2" stroke="#9a6234" stroke-width="1" stroke-linecap="round" opacity=".75"/>`},
+  rabbit:{name:'Rabbit',art:`
+    <ellipse cx="24" cy="17" rx="5.6" ry="15" transform="rotate(-10 24 17)" fill="#ece6df" stroke="rgba(0,0,0,.07)"/>
+    <ellipse cx="40" cy="17" rx="5.6" ry="15" transform="rotate(10 40 17)" fill="#ece6df" stroke="rgba(0,0,0,.07)"/>
+    <ellipse cx="24" cy="18" rx="2.8" ry="11" transform="rotate(-10 24 18)" fill="#f5b8c6"/><ellipse cx="40" cy="18" rx="2.8" ry="11" transform="rotate(10 40 18)" fill="#f5b8c6"/>
+    <circle cx="32" cy="41" r="17" fill="#f4efe9" stroke="rgba(0,0,0,.07)"/>
+    <circle cx="22.5" cy="46" r="3.4" fill="#f5b8c6" opacity=".6"/><circle cx="41.5" cy="46" r="3.4" fill="#f5b8c6" opacity=".6"/>
+    ${EYE(25.5,39)}${EYE(38.5,39)}<path d="M30 45h4l-2 2.4Z" fill="#e8738c" stroke="#e8738c" stroke-linejoin="round"/>
+    ${SMILE(47.4,'#9a8f86')}<rect x="30.4" y="50.4" width="3.2" height="3.2" rx=".8" fill="#fff" stroke="#d8d0c8" stroke-width=".8"/>`},
+  panda:{name:'Panda',art:`
+    <circle cx="16" cy="19" r="8.5" fill="#24252b"/><circle cx="48" cy="19" r="8.5" fill="#24252b"/>
+    <circle cx="32" cy="37" r="20.5" fill="#fbfbf8" stroke="rgba(0,0,0,.08)"/>
+    <ellipse cx="23.5" cy="35" rx="5.6" ry="7.2" transform="rotate(35 23.5 35)" fill="#24252b"/><ellipse cx="40.5" cy="35" rx="5.6" ry="7.2" transform="rotate(-35 40.5 35)" fill="#24252b"/>
+    <circle cx="24.5" cy="34" r="2.3" fill="#fff"/><circle cx="24.8" cy="34.3" r="1.2" fill="#24252b"/>
+    <circle cx="39.5" cy="34" r="2.3" fill="#fff"/><circle cx="39.2" cy="34.3" r="1.2" fill="#24252b"/>
+    <ellipse cx="32" cy="44" rx="3.6" ry="2.6" fill="#24252b"/>${SMILE(46.4,'#24252b')}`},
+  owl:{name:'Owl',art:`
+    <path d="M14 25 15 6 27 17Z" fill="#7a5233"/><path d="M50 25 49 6 37 17Z" fill="#7a5233"/>
+    <ellipse cx="32" cy="38" rx="21" ry="20" fill="#9a6a43"/>
+    <path d="M23.5 50.5l2.5 2.2 2.5-2.2M29.5 53.5l2.5 2.2 2.5-2.2M35.5 50.5l2.5 2.2 2.5-2.2" stroke="#c99a6c" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="23.5" cy="34" r="9" fill="#f3e3c6"/><circle cx="40.5" cy="34" r="9" fill="#f3e3c6"/>
+    <circle cx="23.5" cy="34" r="5.4" fill="#f2a93b"/><circle cx="40.5" cy="34" r="5.4" fill="#f2a93b"/>
+    <circle cx="23.5" cy="34" r="3" fill="#24180f"/><circle cx="40.5" cy="34" r="3" fill="#24180f"/>
+    <circle cx="24.7" cy="32.8" r="1" fill="#fff"/><circle cx="41.7" cy="32.8" r="1" fill="#fff"/>
+    <path d="M32 38.5 28.8 41.6 32 46.8 35.2 41.6Z" fill="#f2a93b"/>`},
+  raccoon:{name:'Raccoon',art:`
+    <path d="M13 28 14 9 28 17Z" fill="#7b7e88"/><path d="M51 28 50 9 36 17Z" fill="#7b7e88"/>
+    <path d="M15.8 23.5 16.3 13.5 24.5 17.8Z" fill="#d7dae0"/><path d="M48.2 23.5 47.7 13.5 39.5 17.8Z" fill="#d7dae0"/>
+    <ellipse cx="32" cy="37" rx="21.5" ry="18.5" fill="#8f939d"/>
+    <ellipse cx="24" cy="27.6" rx="6.5" ry="2.6" fill="#eef0f2"/><ellipse cx="40" cy="27.6" rx="6.5" ry="2.6" fill="#eef0f2"/>
+    <path d="M32 34C35 36 37 40 41 41 39 48 36 53 32 54 28 53 25 48 23 41 27 40 29 36 32 34Z" fill="#eef0f2"/>
+    <path d="M10.5 36C14 30.5 21.5 30 27.5 33.5 30 35 34 35 36.5 33.5 42.5 30 50 30.5 53.5 36 50 41 43 41.5 37 39 34.5 38 29.5 38 27 39 21 41.5 14 41 10.5 36Z" fill="#2b2c32"/>
+    <circle cx="22.5" cy="35.6" r="2.6" fill="#fff"/><circle cx="22.8" cy="35.8" r="1.5" fill="#15161a"/>
+    <circle cx="41.5" cy="35.6" r="2.6" fill="#fff"/><circle cx="41.2" cy="35.8" r="1.5" fill="#15161a"/>
+    <ellipse cx="32" cy="44.5" rx="3.2" ry="2.3" fill="#2b2c32"/>${SMILE(46.8,'#2b2c32')}`},
+  lion:{name:'Lion',art:`
+    <circle cx="32" cy="36" r="23" fill="#c9702a"/>
+    ${Array.from({length:14},(_,i)=>{const a=i/14*Math.PI*2; return `<circle cx="${(32+21*Math.cos(a)).toFixed(1)}" cy="${(36+21*Math.sin(a)).toFixed(1)}" r="7" fill="${i%2?'#c9702a':'#b65f1f'}"/>`;}).join('')}
+    <circle cx="20.5" cy="23" r="5" fill="#f0b85a"/><circle cx="43.5" cy="23" r="5" fill="#f0b85a"/>
+    <circle cx="20.5" cy="23" r="2.6" fill="#d98a3a"/><circle cx="43.5" cy="23" r="2.6" fill="#d98a3a"/>
+    <circle cx="32" cy="37" r="15.5" fill="#f2c063"/><ellipse cx="32" cy="44" rx="8" ry="6" fill="#fbe2b0"/>
+    ${EYE(26,34)}${EYE(38,34)}<path d="M29 40.2h6l-3 3.2Z" fill="#6b3a22" stroke="#6b3a22" stroke-linejoin="round"/>${SMILE(43.6,'#6b3a22')}`}
+};
+const animalOf=p=>ANIMALS[p?.style]?p.style:'fox';
+const animalSVG=(kind,size)=>`<svg viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true">${(ANIMALS[kind]||ANIMALS.fox).art}</svg>`;
+const avatar = (p,size=44) => `<span class="avatar" role="img" aria-label="${ANIMALS[animalOf(p)].name}" style="width:${size}px;height:${size}px;background:color-mix(in oklab,${p.shirt||BG_COLORS[0]} 38%,var(--c-surface2))">${animalSVG(animalOf(p),Math.round(size*.86))}</span>`;
 
 /* ================= Profile & settings ================= */
-let profile = Object.assign({name:'',shirt:SHIRTS[0],style:'classic'}, store.get('profile',{}));
+let profile = Object.assign({name:'',shirt:BG_COLORS[0],style:'fox'}, store.get('profile',{}));
+profile.style=animalOf(profile);   // older accounts had shirt styles
 let settings = Object.assign({ring:'ring'}, store.get('settings',{}));
 function saveProfile(){ store.set('profile',profile); renderMyCard(); queueProfilePush(); }
 function renderProfileEditor(){
   $('#profPreview').innerHTML=avatar(profile,84);
   if(document.activeElement!==$('#profName')) $('#profName').value=profile.name;
-  $('#shirtColors').innerHTML=SHIRTS.map(c=>`<button type="button" class="swatch ${c===profile.shirt?'on':''}" style="background:${c}" data-c="${c}" aria-label="Shirt color ${c}"></button>`).join('');
+  $('#shirtColors').innerHTML=BG_COLORS.map(c=>`<button type="button" class="swatch ${c===profile.shirt?'on':''}" style="background:${c}" data-c="${c}" aria-label="Background color ${c}"></button>`).join('');
   $('#shirtColors').querySelectorAll('.swatch').forEach(s=>s.onclick=()=>{ profile.shirt=s.dataset.c; saveProfile(); renderProfileEditor(); });
-  $('#shirtStyles').innerHTML=STYLES.map(([v,l])=>`<button type="button" class="style-opt ${v===profile.style?'on':''}" data-v="${v}">${shirtSVG(profile.shirt,v,initial(profile.name),36)}<span>${l}</span></button>`).join('');
+  $('#shirtStyles').innerHTML=Object.entries(ANIMALS).map(([v,a])=>`<button type="button" class="style-opt ${v===profile.style?'on':''}" data-v="${v}" aria-label="${a.name}">${avatar({...profile,style:v},44)}<span>${a.name}</span></button>`).join('');
   $('#shirtStyles').querySelectorAll('.style-opt').forEach(s=>s.onclick=()=>{ profile.style=s.dataset.v; saveProfile(); renderProfileEditor(); });
 }
 $('#profName').oninput=e=>{ profile.name=e.target.value.slice(0,30); saveProfile(); renderProfileEditor(); };
@@ -889,6 +966,11 @@ const save = () => { store.set('events',events); queueEventPush(); };
 const COLORS=['#7c5cff','#3b82f6','#14b8a6','#22c55e','#f59e0b','#ef4444','#ec4899','#94a3b8'];
 const REPEATS=[['none','Never'],['daily','Every day'],['weekly','Every week'],['monthly','Every month'],['yearly','Every year']];
 const REMINDS=[['none','None',null],['0','At time',0],['5','5 min before',5],['15','15 min before',15],['30','30 min before',30],['60','1 hour before',60],['1440','1 day before',1440]];
+// All-day events have no time, so their reminders go off at 9 AM
+const ALLDAY_TIME='09:00';
+const ALLDAY_REMINDS=[['none','None',null],['0','Morning of (9 AM)',0],['1440','Day before (9 AM)',1440]];
+const remindInfo=e=>(e.allDay?ALLDAY_REMINDS:REMINDS).find(r=>r[0]===String(e.remind));
+const evTime=e=>e.allDay?'All day':fmtTime(e.time);
 const VIS=[['shared','Friends can see'],['private','Only me']];
 
 function occursOn(ev,date){
@@ -902,18 +984,20 @@ function occursOn(ev,date){
     default: return keyOf(date)===ev.date;
   }
 }
-const byTime=(a,b)=>a.time.localeCompare(b.time);
+const byTime=(a,b)=>(a.allDay?'':a.time).localeCompare(b.allDay?'':b.time);   // all-day events first
 const eventsOn = (d,list=events) => list.filter(e=>occursOn(e,d)).sort(byTime);
 function repeatText(ev){
   const b=parseKey(ev.date);
-  return {daily:`Daily at ${fmtTime(ev.time)}`,weekly:`Every ${DAYS[b.getDay()]}`,monthly:`Monthly on day ${b.getDate()}`,yearly:`Every ${MONTHS[b.getMonth()]} ${b.getDate()}`}[ev.repeat]||'';
+  return {daily:ev.allDay?'Every day':`Daily at ${fmtTime(ev.time)}`,weekly:`Every ${DAYS[b.getDay()]}`,monthly:`Monthly on day ${b.getDate()}`,yearly:`Every ${MONTHS[b.getMonth()]} ${b.getDate()}`}[ev.repeat]||'';
 }
 // Upcoming occurrences in the next `days` days, soonest first
 function upcoming(list,days){
   const now=new Date(), out=[];
   for(let i=0;i<days;i++){
     const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+i);
-    eventsOn(d,list).forEach(e=>{ const [h,m]=e.time.split(':').map(Number); const at=new Date(d); at.setHours(h,m); if(at>=now) out.push({at,e,d}); });
+    eventsOn(d,list).forEach(e=>{
+      if(e.allDay){ const end=new Date(d); end.setHours(23,59,59); if(end>=now) out.push({at:new Date(d),e,d}); return; }   // stays "up next" all day long
+      const [h,m]=e.time.split(':').map(Number); const at=new Date(d); at.setHours(h,m); if(at>=now) out.push({at,e,d}); });
   }
   return out.sort((a,b)=>a.at-b.at);
 }
@@ -940,9 +1024,9 @@ function renderCalendar(){
   });
 }
 function evRow(e,{label,mine=true,notes=false}={}){
-  const rem=REMINDS.find(r=>r[0]===e.remind), tag=mine?'button':'div';
+  const rem=remindInfo(e), tag=mine?'button':'div';
   return `<${tag} class="ev" data-id="${e.id}"><span class="bar" style="background:${e.color}"></span>
-    <span class="t">${label?label+'<br>':''}${fmtTime(e.time)}</span>
+    <span class="t${e.allDay?' allday':''}">${label?label+'<br>':''}${evTime(e)}</span>
     <span style="flex:1;min-width:0"><span class="ti">${esc(e.title)}</span>
       <span class="meta">${e.repeat!=='none'?`<span>${icon('repeat')}${repeatText(e)}</span>`:''}${mine&&rem&&rem[2]!==null?`<span>${icon('bell')}${rem[1]}</span>`:''}${mine&&e.private?`<span>${icon('lock')}Only me</span>`:''}${mine&&e.notes?`<span>${icon('note')}Notes</span>`:''}</span>
       ${notes&&e.notes?`<span class="nt" style="display:block">${esc(e.notes)}</span>`:''}
@@ -985,22 +1069,36 @@ function ask(title,body,okText='OK',danger=false){
 }
 
 /* ================= Event editor ================= */
-let editing=null, fRepeat='none', fRemind='0', fColor=COLORS[0], fVis='shared';
+let editing=null, fRepeat='none', fRemind='0', fColor=COLORS[0], fVis='shared', fAllDay=false;
 function chipGroup(el,items,get,set){
   el.innerHTML=items.map(([v,l])=>`<button type="button" class="chip" data-v="${v}">${l}</button>`).join('');
   const sync=()=>el.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.dataset.v===get()));
   el.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{set(c.dataset.v);sync();updateHint();}); sync(); return sync;
 }
 const syncRepeat=chipGroup($('#fRepeat'),REPEATS,()=>fRepeat,v=>fRepeat=v);
-const syncRemind=chipGroup($('#fRemind'),REMINDS,()=>fRemind,v=>fRemind=v);
+let syncRemind=()=>{};
+function renderRemindChips(){
+  const list=fAllDay?ALLDAY_REMINDS:REMINDS;
+  if(!list.some(r=>r[0]===fRemind)) fRemind='0';
+  syncRemind=chipGroup($('#fRemind'),list,()=>fRemind,v=>fRemind=v);
+}
+function setAllDay(on){
+  fAllDay=on; $('#fAllDay').setAttribute('aria-checked',String(on));
+  $('#fTimeWrap').style.display=on?'none':''; $('#fTime').required=!on;
+  $('#fWhenRow').classList.toggle('one',on);
+  $('#fAllDayHint').textContent=on?'This event lasts the whole day':"Turn on if there's no set time";
+  renderRemindChips(); updateHint();
+}
+$('#fAllDay').onclick=()=>setAllDay(!fAllDay);
 const syncVis=chipGroup($('#fVis'),VIS,()=>fVis,v=>fVis=v);
 function renderColors(){
   $('#fColor').innerHTML=COLORS.map(c=>`<button type="button" class="swatch ${c===fColor?'on':''}" style="background:${c}" data-c="${c}" aria-label="Color ${c}"></button>`).join('');
   $('#fColor').querySelectorAll('.swatch').forEach(s=>s.onclick=()=>{fColor=s.dataset.c;renderColors();});
 }
 function updateHint(){
-  const d=$('#fDate').value, t=$('#fTime').value;
-  $('#repeatHint').textContent = fRepeat==='none'||!d||!t ? 'Happens once.' : 'Repeats: '+repeatText({date:d,time:t,repeat:fRepeat})+(fRepeat!=='daily'?' at '+fmtTime(t):'');
+  const d=$('#fDate').value, t=fAllDay?ALLDAY_TIME:$('#fTime').value;
+  $('#repeatHint').textContent = fRepeat==='none'||!d||!t ? (fAllDay?'Happens once, all day.':'Happens once.')
+    : 'Repeats: '+repeatText({date:d,time:t,repeat:fRepeat,allDay:fAllDay})+(fAllDay?(fRepeat!=='daily'?', all day':''):(fRepeat!=='daily'?' at '+fmtTime(t):''));
 }
 $('#fDate').oninput=updateHint; $('#fTime').oninput=updateHint;
 function openEditor(ev,dateKey){
@@ -1008,9 +1106,9 @@ function openEditor(ev,dateKey){
   $('#evHeading').textContent=ev?'Edit event':'New event';
   $('#fTitle').value=ev?.title||''; $('#fNotes').value=ev?.notes||'';
   $('#fDate').value=ev?.date||dateKey||keyOf(selected);
-  const n=new Date(); $('#fTime').value=ev?.time||`${pad((n.getHours()+1)%24)}:00`;
-  fRepeat=ev?.repeat||'none'; fRemind=ev?.remind??'0'; fColor=ev?.color||COLORS[0]; fVis=ev?.private?'private':'shared';
-  syncRepeat(); syncRemind(); syncVis(); renderColors(); updateHint();
+  const n=new Date(); $('#fTime').value=(ev&&!ev.allDay&&ev.time)||`${pad((n.getHours()+1)%24)}:00`;
+  fRepeat=ev?.repeat||'none'; fRemind=String(ev?.remind??'0'); fColor=ev?.color||COLORS[0]; fVis=ev?.private?'private':'shared';
+  syncRepeat(); syncVis(); renderColors(); setAllDay(!!ev?.allDay);
   $('#evDelete').style.visibility=ev?'visible':'hidden';
   openScrim('#evScrim'); setTimeout(()=>$('#fTitle').focus(),50);
 }
@@ -1018,11 +1116,11 @@ $('#addBtn').onclick=()=>openEditor(null);
 $('#evClose').onclick=$('#evCancel').onclick=()=>closeScrim('#evScrim');
 $('#evForm').onsubmit=e=>{
   e.preventDefault();
-  const data={title:$('#fTitle').value.trim(),date:$('#fDate').value,time:$('#fTime').value,notes:$('#fNotes').value.trim(),repeat:fRepeat,remind:fRemind,color:fColor,private:fVis==='private'};
+  const data={title:$('#fTitle').value.trim(),date:$('#fDate').value,allDay:fAllDay,time:fAllDay?ALLDAY_TIME:$('#fTime').value,notes:$('#fNotes').value.trim(),repeat:fRepeat,remind:fRemind,color:fColor,private:fVis==='private'};
   if(!data.title||!data.date||!data.time) return;
   if(editing) Object.assign(editing,data); else events.push({id:uuid(),...data});
   save(); selected=parseKey(data.date); viewY=selected.getFullYear(); viewM=selected.getMonth();
-  closeScrim('#evScrim'); renderAll(); toast('Saved',`${data.title} · ${fmtTime(data.time)}`);
+  closeScrim('#evScrim'); renderAll(); toast('Saved',`${data.title} · ${evTime(data)}`);
 };
 $('#evDelete').onclick=async()=>{
   if(!editing) return; const ev=editing;
@@ -1199,7 +1297,7 @@ let fired=store.get('fired',{});
 function checkReminders(){
   const now=Date.now();
   for(const e of events){
-    const r=REMINDS.find(x=>x[0]===e.remind); if(!r||r[2]===null) continue;
+    const r=remindInfo(e); if(!r||r[2]===null) continue;
     for(let off=-1;off<=2;off++){
       const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+off);
       if(!occursOn(e,d)) continue;
@@ -1207,8 +1305,8 @@ function checkReminders(){
       const fireAt=at.getTime()-r[2]*60000, key=e.id+'@'+keyOf(d);
       if(now>=fireAt && now-fireAt<10*60000 && !fired[key]){
         fired[key]=now; store.set('fired',fired);
-        const when=r[2]===0?'Starting now':`${r[1].replace(' before','')} until it starts`;
-        const sub=`${when} · ${fmtTime(e.time)}${e.notes?' · '+e.notes:''}`;
+        const when=e.allDay?(r[2]===0?'Today':'Tomorrow'):(r[2]===0?'Starting now':`${r[1].replace(' before','')} until it starts`);
+        const sub=`${when} · ${evTime(e)}${e.notes?' · '+e.notes:''}`;
         if(settings.ring==='ring') ringAlarm(e.title,sub);
         else { if(settings.ring==='once') playTone(toneSel,false); notify(e.title,sub); }
         toast('Reminder: '+e.title,sub,'bell');
@@ -1242,7 +1340,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
     },
     async saveProfile(p){ ok(await sb.from('profiles').update({name:(p.name||'Me').slice(0,30),shirt:p.shirt,style:p.style}).eq('id',uid)); },
     async pushEvents(list){
-      const rows=list.map(e=>({id:e.id,owner:uid,title:e.title,date:e.date,time:e.time,notes:e.notes||'',repeat:e.repeat,remind:String(e.remind),color:e.color,private:!!e.private,updated_at:new Date().toISOString()}));
+      const rows=list.map(e=>({id:e.id,owner:uid,title:e.title,date:e.date,time:e.time,all_day:!!e.allDay,notes:e.notes||'',repeat:e.repeat,remind:String(e.remind),color:e.color,private:!!e.private,updated_at:new Date().toISOString()}));
       if(rows.length) ok(await sb.from('events').upsert(rows));
       let q=sb.from('events').delete().eq('owner',uid);
       if(rows.length) q=q.not('id','in',`(${rows.map(r=>r.id).join(',')})`);
@@ -1253,7 +1351,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       if(!ids.length) return [];
       const [profs,evs]=await Promise.all([
         sb.from('profiles').select('id,name,username,shirt,style').in('id',ids).then(ok),
-        sb.from('events').select('id,owner,title,date,time,notes,repeat,color').in('owner',ids).then(ok)
+        sb.from('events').select('id,owner,title,date,time,all_day,notes,repeat,color').in('owner',ids).then(ok).then(rows=>rows.map(e=>({...e,allDay:e.all_day})))
       ]);
       return profs.map(p=>({...p,events:evs.filter(e=>e.owner===p.id)}));
     },
@@ -1354,7 +1452,7 @@ function renderFriends(){
   $('#friendCount').textContent=fr.length?`${fr.length} friend${fr.length>1?'s':''}`:'';
   $('#friendList').innerHTML = fr.length ? fr.map(f=>{
     const next=upcoming(f.events,14)[0];
-    return `<button class="friend" data-id="${f.id}">${avatar(f,48)}<span class="fn"><b>${esc(f.name)}${f.username?` <span class="uname">@${esc(f.username)}</span>`:''}</b><span>${next?`Next: ${esc(next.e.title)} · ${dayLabel(next.d)} ${fmtTime(next.e.time)}`:'Nothing coming up'}</span></span>${icon('right')}</button>`;
+    return `<button class="friend" data-id="${f.id}">${avatar(f,48)}<span class="fn"><b>${esc(f.name)}${f.username?` <span class="uname">@${esc(f.username)}</span>`:''}</b><span>${next?`Next: ${esc(next.e.title)} · ${dayLabel(next.d)}${next.e.allDay?', all day':' '+fmtTime(next.e.time)}`:'Nothing coming up'}</span></span>${icon('right')}</button>`;
   }).join('') : `<div class="empty">${icon('users')}<div>No friends yet. Show your code to a friend who has Daybloom, or type in theirs.</div></div>`;
   $('#friendList').querySelectorAll('.friend').forEach(b=>b.onclick=()=>openFriend(Cloud.friends.find(f=>f.id===b.dataset.id)));
 }
