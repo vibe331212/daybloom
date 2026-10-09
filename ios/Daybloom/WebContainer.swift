@@ -100,7 +100,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         case "reminders":
             let items = body["items"] as? [[String: Any]] ?? []
             let sound = body["sound"] as? Bool ?? true
-            Task { await Reminders.schedule(items, sound: sound) }
+            let ask = body["ask"] as? Bool ?? false
+            Task { await Reminders.schedule(items, sound: sound, ask: ask) }
         case "timer":
             let at = (body["at"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
             Task { await Reminders.scheduleTimer(at: at, body: body["body"] as? String ?? "Your timer finished") }

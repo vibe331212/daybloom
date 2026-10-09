@@ -7,3 +7,4 @@ supabase/.temp/
 supabase/.branches/
 ios/build/
 ios/**/xcuserdata/
+*.local.txt

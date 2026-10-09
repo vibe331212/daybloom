@@ -1173,7 +1173,7 @@ applyShade(store.get('shade',0));
 
 /* ================= Events & recurrence ================= */
 let events = store.get('events',[]).map(e=>isUuid(e.id)?e:{...e,id:uuid()});
-const save = () => { store.set('events',events); queueEventPush(); syncNativeReminders(); };
+const save = () => { store.set('events',events); queueEventPush(); syncNativeReminders(true); };
 const COLORS=['#7c5cff','#3b82f6','#14b8a6','#22c55e','#f59e0b','#ef4444','#ec4899','#94a3b8'];
 const REPEATS=[['none','Never'],['daily','Every day'],['weekly','Every week'],['monthly','Every month'],['yearly','Every year']];
 const REMINDS=[['none','None',null],['0','At time',0],['5','5 min before',5],['15','15 min before',15],['30','30 min before',30],['60','1 hour before',60],['1440','1 day before',1440]];
@@ -1329,13 +1329,15 @@ $('#evForm').onsubmit=e=>{
   e.preventDefault();
   const data={title:$('#fTitle').value.trim(),date:$('#fDate').value,allDay:fAllDay,time:fAllDay?ALLDAY_TIME:$('#fTime').value,notes:$('#fNotes').value.trim(),repeat:fRepeat,remind:fRemind,color:fColor,private:fVis==='private'};
   if(!data.title||!data.date||!data.time) return;
-  if(editing) Object.assign(editing,data); else events.push({id:uuid(),...data});
+  const stamp={updated:Date.now(),synced:false};
+  if(editing) Object.assign(editing,data,stamp); else events.push({id:uuid(),...data,...stamp});
   save(); selected=parseKey(data.date); viewY=selected.getFullYear(); viewM=selected.getMonth();
   closeScrim('#evScrim'); renderAll(); toast('Saved',`${data.title} · ${evTime(data)}`); buzz('success');
 };
 $('#evDelete').onclick=async()=>{
   if(!editing) return; const ev=editing;
   if(!await ask('Delete event?',`"${ev.title}"${ev.repeat!=='none'?' and all of its repeats':''} will be removed.`,'Delete',true)) return;
+  eventTombstones.push(ev.id); store.set('eventTombstones',eventTombstones);
   events=events.filter(e=>e!==ev); save(); closeScrim('#evScrim'); renderAll();
 };
 
@@ -1647,7 +1649,7 @@ function checkReminders(){
   const cutoff=now-3*86400000; let dirty=false; for(const k in fired) if(fired[k]<cutoff){ delete fired[k]; dirty=true; } if(dirty) store.set('fired',fired);
 }
 // Hand the next month of reminders to the iPhone so they go off even when Daybloom is closed
-function syncNativeReminders(){
+function syncNativeReminders(ask=false){   // ask: OK to show the permission prompt (right after someone sets a reminder)
   if(!Native.on) return;
   const now=Date.now(), items=[];
   for(const e of events){
@@ -1662,7 +1664,7 @@ function syncNativeReminders(){
     }
   }
   items.sort((a,b)=>a.at-b.at);
-  Native.send({type:'reminders',items:items.slice(0,60),sound:settings.ring!=='silent'});   // iPhone allows 64 waiting notifications
+  Native.send({type:'reminders',items:items.slice(0,60),sound:settings.ring!=='silent',ask});   // iPhone allows 64 waiting notifications
 }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncNativeReminders(); });
 function notifUI(){
@@ -1690,13 +1692,15 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       return ok(await sb.rpc('ensure_profile',{p_name:p.name||'Me',p_shirt:p.shirt,p_style:p.style}));
     },
     async saveProfile(p){ ok(await sb.from('profiles').update({name:(p.name||'Me').slice(0,30),shirt:p.shirt,style:p.style}).eq('id',uid)); },
-    async pushEvents(list){
-      const rows=list.map(e=>({id:e.id,owner:uid,title:e.title,date:e.date,time:e.time,all_day:!!e.allDay,notes:e.notes||'',repeat:e.repeat,remind:String(e.remind),color:e.color,private:!!e.private,updated_at:new Date().toISOString()}));
-      if(rows.length) ok(await sb.from('events').upsert(rows));
-      let q=sb.from('events').delete().eq('owner',uid);
-      if(rows.length) q=q.not('id','in',`(${rows.map(r=>r.id).join(',')})`);
-      ok(await q);
+    async pullEvents(){
+      return ok(await sb.from('events').select('id,title,date,time,all_day,notes,repeat,remind,color,private,updated_at').eq('owner',uid))
+        .map(e=>({id:e.id,title:e.title,date:e.date,time:e.time,allDay:e.all_day,notes:e.notes||'',repeat:e.repeat,remind:e.remind,color:e.color,private:e.private,updated:Date.parse(e.updated_at)||0,synced:true}));
     },
+    async upsertEvents(list){
+      if(!list.length) return;
+      ok(await sb.from('events').upsert(list.map(e=>({id:e.id,owner:uid,title:e.title,date:e.date,time:e.time,all_day:!!e.allDay,notes:e.notes||'',repeat:e.repeat,remind:String(e.remind),color:e.color,private:!!e.private,updated_at:new Date(e.updated||Date.now()).toISOString()}))));
+    },
+    async deleteEvents(ids){ if(ids.length) ok(await sb.from('events').delete().eq('owner',uid).in('id',ids)); },
     async friends(){
       const ids=ok(await sb.from('friendships').select('friend_id').eq('user_id',uid)).map(f=>f.friend_id);
       if(!ids.length) return [];
@@ -1782,11 +1786,30 @@ function setStatus(state,text){
   const off=state!=='on'; $('#offlineNotice').style.display=off&&state!=='connecting'?'flex':'none';
   ['#showQr','#copyCode','#shareCode','#addSubmit'].forEach(id=>$(id).disabled=off);
 }
-function queueEventPush(){ if(!Cloud.on) return; clearTimeout(pushTimer); pushTimer=setTimeout(pushEvents,800); }
-async function pushEvents(){
-  if(!Cloud.on) return;
-  try{ await Cloud.api.pushEvents(events); }catch(e){ toast('Could not sync',e.message,'cloud'); }
+function queueEventPush(){ if(!Cloud.on) return; clearTimeout(pushTimer); pushTimer=setTimeout(syncEvents,800); }
+// Two-way sync: combine this device's events with the ones saved online, newest change wins.
+// Events deleted here are remembered (eventTombstones) so only those are deleted online.
+let eventTombstones=store.get('eventTombstones',[]), syncing=false, lastSync=0;
+async function syncEvents(){
+  if(!Cloud.on||syncing) return; syncing=true;
+  try{
+    if(eventTombstones.length){ await Cloud.api.deleteEvents(eventTombstones); eventTombstones=[]; store.set('eventTombstones',[]); }
+    const online=new Map((await Cloud.api.pullEvents()).map(e=>[e.id,e])), merged=[], toUpload=[];
+    for(const e of events){
+      const o=online.get(e.id);
+      if(o){ online.delete(e.id); if(!e.synced&&(e.updated||0)>=(o.updated||0)){ merged.push(e); toUpload.push(e); } else merged.push(o); }
+      else if(!e.synced){ merged.push(e); toUpload.push(e); }   // new on this device
+      // else: it was deleted on another device, so drop it here too
+    }
+    merged.push(...online.values());                         // added on another device
+    await Cloud.api.upsertEvents(toUpload);
+    toUpload.forEach(e=>e.synced=true);
+    events=merged; store.set('events',events); lastSync=Date.now();
+    renderAll(); syncNativeReminders();
+  }catch(e){ toast('Could not sync',e.message,'cloud'); }
+  finally{ syncing=false; }
 }
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&Cloud.on&&Date.now()-lastSync>30000) syncEvents(); });
 function queueProfilePush(){ if(!Cloud.on) return; clearTimeout(profTimer); profTimer=setTimeout(async()=>{ try{ await Cloud.api.saveProfile(profile); }catch(e){ toast('Could not save profile',e.message,'cloud'); } },800); }
 
 async function startCloud(api){
@@ -1796,7 +1819,7 @@ async function startCloud(api){
     Cloud.on=true; setStatus('on','Online');
     if(!profile.name && Cloud.me.name && Cloud.me.name!=='Me'){ profile.name=Cloud.me.name; store.set('profile',profile); renderProfileEditor(); }
     await api.saveProfile(profile);
-    await pushEvents();
+    await syncEvents();
     await refreshBlocks();
     renderMyCard(); await refreshFriends(); await refreshChats();
     askRulesIfNeeded();

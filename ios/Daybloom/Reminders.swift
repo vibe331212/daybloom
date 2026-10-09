@@ -7,11 +7,12 @@ enum Reminders {
     private static let reminderPrefix = "reminder:"
     private static let timerID = "timer"
 
-    /// Asks for permission the first time something needs a notification.
-    private static func allowed() async -> Bool {
+    /// Checks permission. Only asks the person when `ask` is true, which is when they just set a reminder or started a timer.
+    private static func allowed(ask: Bool = true) async -> Bool {
         let settings = await center.notificationSettings()
         switch settings.authorizationStatus {
         case .notDetermined:
+            guard ask else { return false }
             return (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
         case .authorized, .provisional, .ephemeral:
             return true
@@ -21,10 +22,10 @@ enum Reminders {
     }
 
     /// Replaces every scheduled reminder with this list. Each item is {id, title, body, at} where `at` is milliseconds since 1970.
-    static func schedule(_ items: [[String: Any]], sound: Bool) async {
+    static func schedule(_ items: [[String: Any]], sound: Bool, ask: Bool) async {
         let pending = await center.pendingNotificationRequests()
         center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(reminderPrefix) })
-        guard !items.isEmpty, await allowed() else { return }
+        guard !items.isEmpty, await allowed(ask: ask) else { return }
 
         for item in items.prefix(60) {   // iOS keeps at most 64 waiting notifications; leave room for the timer
             guard let id = item["id"] as? String,
