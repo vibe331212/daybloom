@@ -37,6 +37,10 @@ create table if not exists public.events (
 );
 create index if not exists events_owner_idx on public.events(owner);
 
+-- Usernames (people sign up with a username and password)
+alter table public.profiles add column if not exists username text unique
+  check (username ~ '^[a-z0-9_]{3,20}$');
+
 alter table public.profiles    enable row level security;
 alter table public.friendships enable row level security;
 alter table public.events      enable row level security;
@@ -46,7 +50,7 @@ alter table public.events      enable row level security;
 revoke all on public.profiles    from anon, authenticated;
 revoke all on public.friendships from anon, authenticated;
 revoke all on public.events      from anon, authenticated;
-grant select (id, name, shirt, style, created_at) on public.profiles to authenticated;
+grant select (id, name, username, shirt, style, created_at) on public.profiles to authenticated;
 grant update (name, shirt, style)                 on public.profiles to authenticated;
 grant select                                      on public.friendships to authenticated;
 grant select, insert, update, delete              on public.events to authenticated;
@@ -96,15 +100,23 @@ end $$;
 
 create or replace function public.ensure_profile(p_name text, p_shirt text, p_style text)
 returns public.profiles language plpgsql security definer set search_path = public as $$
-declare me public.profiles;
+declare
+  me public.profiles;
+  email text := lower(coalesce(auth.jwt() ->> 'email', ''));
+  uname text;
 begin
   if auth.uid() is null then raise exception 'Not signed in'; end if;
+  -- The username comes from the signed-in account itself (username@users.daybloom.app), so it can't be faked
+  if email !~ '^[a-z0-9_]{3,20}@users\.daybloom\.app$' then raise exception 'Sign in with a Daybloom username'; end if;
+  uname := split_part(email, '@', 1);
   select * into me from public.profiles where id = auth.uid();
   if not found then
-    insert into public.profiles (id, name, shirt, style, code)
-    values (auth.uid(), coalesce(nullif(left(trim(p_name), 30), ''), 'Me'),
+    insert into public.profiles (id, name, username, shirt, style, code)
+    values (auth.uid(), coalesce(nullif(left(trim(p_name), 30), ''), uname), uname,
             coalesce(p_shirt, '#7c5cff'), coalesce(p_style, 'classic'), public.new_friend_code())
     returning * into me;
+  elsif me.username is null then
+    update public.profiles set username = uname where id = auth.uid() returning * into me;
   end if;
   return me;
 end $$;
@@ -121,7 +133,7 @@ begin
   insert into public.friendships (user_id, friend_id)
   values (auth.uid(), f.id), (f.id, auth.uid())
   on conflict do nothing;
-  return json_build_object('id', f.id, 'name', f.name, 'shirt', f.shirt, 'style', f.style);
+  return json_build_object('id', f.id, 'name', f.name, 'username', f.username, 'shirt', f.shirt, 'style', f.style);
 end $$;
 
 create or replace function public.remove_friend(p_friend uuid)

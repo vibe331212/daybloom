@@ -10,6 +10,16 @@
 <meta name="apple-mobile-web-app-title" content="Daybloom">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
+<script>
+/* Who is signed in? Decided before the page paints so the app never flashes before the sign-in screen. */
+(function(){
+  var s=null, ls=null;
+  try{ ls=window.localStorage; s=JSON.parse(ls.getItem('si.session')); }catch(e){}
+  if(s&&s.mode==='cloud'){ var live=false; try{ for(var i=0;i<ls.length;i++) if(/^sb-.+-auth-token$/.test(ls.key(i))) live=true; }catch(e){} if(!live) s=null; }
+  if(s&&s.id&&s.username){ window.SI_USER=s; window.SI_NS='si.u.'+s.id+'.'; }
+  else { window.SI_USER=null; window.SI_NS='si.guest.'; document.documentElement.classList.add('locked'); }
+})();
+</script>
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="icon-192.png" type="image/png">
@@ -256,6 +266,28 @@ textarea.inp{resize:vertical;min-height:70px}
 .ring-opt b{display:block;font-size:14px}
 .ring-opt span{font-size:12px;color:var(--muted)}
 
+/* ---------- Sign in ---------- */
+#gate{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;padding:20px;overflow:auto}
+html.locked #gate{display:flex}
+html.locked .app,html.locked .toasts{visibility:hidden}
+html.locked body{overflow:hidden}
+.gate-card{width:min(400px,100%);margin:auto;background:color-mix(in oklab,var(--c-surface) 86%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border:1px solid var(--border);border-radius:24px;padding:28px 24px;box-shadow:0 30px 80px rgba(0,0,0,.35);text-align:center;animation:fade .4s ease}
+.gate-icon{width:76px;height:76px;border-radius:20px;display:block;margin:0 auto 14px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.gate-card h1{font-size:30px}
+.gate-card .field{text-align:left}
+.gate-seg{display:flex;width:100%;margin:22px 0 4px}
+.gate-seg button{flex:1}
+.pw{position:relative}
+.pw .inp{padding-right:48px}
+.pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:grid;place-items:center;color:var(--muted);border-radius:10px}
+.pw-eye:hover{color:var(--text)}
+.pw-eye svg{width:18px;height:18px}
+.gate-err{color:#ff5a6a;font-size:13px;font-weight:500;min-height:18px;margin-top:12px;text-align:left}
+.gate-go{width:100%;margin-top:6px;padding:13px}
+.gate-note{margin-top:16px;line-height:1.5;font-size:12px;color:var(--muted)}
+.uname{font-size:13px;color:var(--muted);font-weight:500}
+
 /* ---------- Toasts / Alarm ---------- */
 .toasts{position:fixed;top:calc(16px + env(safe-area-inset-top));right:16px;display:flex;flex-direction:column;gap:10px;z-index:60;max-width:calc(100vw - 32px)}
 .toast{background:var(--c-surface);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:14px;padding:14px 16px;
@@ -471,6 +503,10 @@ textarea.inp{resize:vertical;min-height:70px}
           <div class="range-labels"><span>Lighter</span><span id="shadeVal">Normal</span><span>Deeper</span></div>
         </div>
         <div class="card">
+          <h2>Account</h2>
+          <div class="set-row"><div><div class="k" id="acctName"></div><div class="v" id="acctMode"></div></div><button class="btn ghost" id="signOut">Sign out</button></div>
+        </div>
+        <div class="card">
           <h2>On your phone</h2>
           <div class="sub" style="line-height:1.55">On iPhone, tap Share then Add to Home Screen. On Android, tap the menu then Install app. Daybloom then opens full screen like a normal app.</div>
         </div>
@@ -480,6 +516,23 @@ textarea.inp{resize:vertical;min-height:70px}
 </div>
 
 <!-- Event modal -->
+<!-- Sign in / sign up -->
+<div id="gate" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+  <form class="gate-card" id="gateForm" novalidate>
+    <img src="icon.svg" class="gate-icon" alt="">
+    <h1 id="gateTitle">Daybloom</h1>
+    <div class="sub" id="gateSub">Welcome back. Sign in to your schedule.</div>
+    <div class="seg gate-seg" id="gateSeg"><button type="button" data-m="in" class="on">Sign in</button><button type="button" data-m="up">Sign up</button></div>
+    <div class="field"><label for="gUser">Username</label><input class="inp" id="gUser" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="20" placeholder="your_name"></div>
+    <div class="field"><label for="gPass">Password</label><div class="pw"><input class="inp" id="gPass" name="password" type="password" autocomplete="current-password" maxlength="72"><button type="button" class="pw-eye" id="gEye" aria-label="Show password"><svg class="i" data-icon="eye"></svg></button></div></div>
+    <div class="field" id="gConfirmWrap" style="display:none"><label for="gPass2">Confirm password</label><input class="inp" id="gPass2" type="password" autocomplete="new-password" maxlength="72"></div>
+    <div class="hint" id="gRules" style="display:none;text-align:left">Username: 3 to 20 lowercase letters, numbers or _. Password: at least 8 characters.</div>
+    <div class="gate-err" id="gErr" role="alert"></div>
+    <button class="btn primary gate-go" id="gGo" type="submit">Sign in</button>
+    <div class="gate-note" id="gNote"></div>
+  </form>
+</div>
+
 <div class="scrim" id="evScrim">
   <form class="modal" id="evForm" autocomplete="off">
     <div class="modal-top">
@@ -572,8 +625,8 @@ hydrateIcons();
 
 /* ================= Helpers ================= */
 const store = {
-  get(k,d){ try{ const v=localStorage.getItem('si.'+k); return v==null?d:JSON.parse(v);}catch{ return d; } },
-  set(k,v){ try{ localStorage.setItem('si.'+k,JSON.stringify(v)); }catch{} }
+  get(k,d){ try{ const v=localStorage.getItem(window.SI_NS+k); return v==null?d:JSON.parse(v);}catch{ return d; } },
+  set(k,v){ try{ localStorage.setItem(window.SI_NS+k,JSON.stringify(v)); }catch{} }
 };
 const $ = s => document.querySelector(s);
 const pad = n => String(n).padStart(2,'0');
@@ -1183,7 +1236,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
   return {
     async init(p){
       let { data:{ session } } = await sb.auth.getSession();
-      if(!session){ const r=await sb.auth.signInAnonymously(); if(r.error) throw new Error(r.error.message); session=r.data.session; }
+      if(!session) throw new Error('signed-out');
       uid=session.user.id;
       return ok(await sb.rpc('ensure_profile',{p_name:p.name||'Me',p_shirt:p.shirt,p_style:p.style}));
     },
@@ -1199,14 +1252,15 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       const ids=ok(await sb.from('friendships').select('friend_id').eq('user_id',uid)).map(f=>f.friend_id);
       if(!ids.length) return [];
       const [profs,evs]=await Promise.all([
-        sb.from('profiles').select('id,name,shirt,style').in('id',ids).then(ok),
+        sb.from('profiles').select('id,name,username,shirt,style').in('id',ids).then(ok),
         sb.from('events').select('id,owner,title,date,time,notes,repeat,color').in('owner',ids).then(ok)
       ]);
       return profs.map(p=>({...p,events:evs.filter(e=>e.owner===p.id)}));
     },
     async addFriend(code){ return ok(await sb.rpc('add_friend',{p_code:code})); },
     async removeFriend(id){ ok(await sb.rpc('remove_friend',{p_friend:id})); },
-    async newCode(){ return ok(await sb.rpc('new_code')); }
+    async newCode(){ return ok(await sb.rpc('new_code')); },
+    async signOut(){ await sb.auth.signOut(); }
   };
 }
 
@@ -1233,8 +1287,9 @@ async function startCloud(api){
     await api.saveProfile(profile);
     await pushEvents();
     renderMyCard(); await refreshFriends();
-    if(pendingAdd){ const c=pendingAdd; pendingAdd=null; offerAdd(c); }
+    if(pendingAdd){ const c=pendingAdd; pendingAdd=null; try{ sessionStorage.removeItem('si.pendingAdd'); }catch{} offerAdd(c); }
   }catch(e){
+    if(e.message==='signed-out'){ endSession(); return; }
     Cloud.on=false; setStatus('err','Offline');
     $('#offlineText').textContent='Could not connect: '+e.message+'. Your calendar still works on this device.';
   }
@@ -1243,7 +1298,7 @@ async function startCloud(api){
 /* ================= Friends UI ================= */
 function renderMyCard(){
   $('#myAvatar').innerHTML=avatar(profile,96);
-  $('#myName').textContent=profile.name||'Set your name in Settings';
+  $('#myName').innerHTML=`${esc(profile.name||SI_USER?.username||'')}<div class="uname">${SI_USER?'@'+esc(SI_USER.username):''}</div>`;
   const c=$('#myCode');
   if(Cloud.on&&Cloud.me?.code){ c.textContent=fmtCode(Cloud.me.code); c.classList.remove('off'); }
   else { c.textContent='Not online yet'; c.classList.add('off'); }
@@ -1299,7 +1354,7 @@ function renderFriends(){
   $('#friendCount').textContent=fr.length?`${fr.length} friend${fr.length>1?'s':''}`:'';
   $('#friendList').innerHTML = fr.length ? fr.map(f=>{
     const next=upcoming(f.events,14)[0];
-    return `<button class="friend" data-id="${f.id}">${avatar(f,48)}<span class="fn"><b>${esc(f.name)}</b><span>${next?`Next: ${esc(next.e.title)} · ${dayLabel(next.d)} ${fmtTime(next.e.time)}`:'Nothing coming up'}</span></span>${icon('right')}</button>`;
+    return `<button class="friend" data-id="${f.id}">${avatar(f,48)}<span class="fn"><b>${esc(f.name)}${f.username?` <span class="uname">@${esc(f.username)}</span>`:''}</b><span>${next?`Next: ${esc(next.e.title)} · ${dayLabel(next.d)} ${fmtTime(next.e.time)}`:'Nothing coming up'}</span></span>${icon('right')}</button>`;
   }).join('') : `<div class="empty">${icon('users')}<div>No friends yet. Show your code to a friend who has Daybloom, or type in theirs.</div></div>`;
   $('#friendList').querySelectorAll('.friend').forEach(b=>b.onclick=()=>openFriend(Cloud.friends.find(f=>f.id===b.dataset.id)));
 }
@@ -1311,7 +1366,7 @@ function openFriend(f){
     const evs=eventsOn(d,f.events); if(!evs.length) continue;
     body+=`<div class="day-label">${dayLabel(d)}</div>`+evs.map(e=>evRow(e,{mine:false,notes:true})).join('');
   }
-  $('#sheet').innerHTML=`<div class="modal-top"><div style="display:flex;gap:12px;align-items:center">${avatar(f,52)}<div><h2>${esc(f.name)}</h2><div class="sub" style="margin:0">Next 2 weeks</div></div></div>
+  $('#sheet').innerHTML=`<div class="modal-top"><div style="display:flex;gap:12px;align-items:center">${avatar(f,52)}<div><h2>${esc(f.name)}</h2><div class="sub" style="margin:0">${f.username?'@'+esc(f.username)+' · ':''}Next 2 weeks</div></div></div>
       <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
     <div class="ev-list">${body||`<div class="empty">${icon('sparkle')}<div>${esc(f.name)} has nothing shared for the next 2 weeks.</div></div>`}</div>
     <div class="modal-actions"><button class="btn danger" id="unfriend">${icon('trash')}Remove friend</button></div>`;
@@ -1332,15 +1387,112 @@ setInterval(tickClock,1000); setInterval(checkReminders,10000); checkReminders()
 setInterval(()=>{ renderUpNext(); if(Cloud.on&&$('#view-friends').classList.contains('active')) refreshFriends(); },60000);
 
 { const p=new URLSearchParams(location.search).get('add');
-  if(p){ pendingAdd=p.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8); history.replaceState(null,'',location.pathname); store.set('view','friends'); } }
+  if(p){ pendingAdd=p.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8); history.replaceState(null,'',location.pathname); store.set('view','friends');
+    try{ sessionStorage.setItem('si.pendingAdd',pendingAdd); }catch{} }
+  else { try{ pendingAdd=sessionStorage.getItem('si.pendingAdd'); }catch{} } }
 document.querySelector(`.tab[data-view="${store.get('view','calendar')}"]`)?.click();
 
+/* ================= Accounts ================= */
 const CFG=window.SCHEDULE_IT_CONFIG||{};
-if(CFG.supabaseUrl&&CFG.supabaseKey&&window.supabase) startCloud(supabaseApi(CFG));
+const CLOUD=!!(CFG.supabaseUrl&&CFG.supabaseKey&&window.supabase);
+// Usernames ride on Supabase's email sign-in using this made-up address; no email is ever sent to it.
+const userEmail=u=>`${u}@users.daybloom.app`;
+const USERNAME_RE=/^[a-z0-9_]{3,20}$/;
+const b64=a=>btoa(String.fromCharCode(...a)), unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function hashPassword(pw,salt){
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits']);
+  return b64(new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:210000},key,256)));
+}
+async function localAuth(mode,u,pw){
+  const accts=JSON.parse(localStorage.getItem('si.accounts')||'{}');
+  if(mode==='up'){
+    if(accts[u]) throw new Error('That username is already taken on this device');
+    const salt=crypto.getRandomValues(new Uint8Array(16));
+    accts[u]={id:uuid(),salt:b64(salt),hash:await hashPassword(pw,salt)};
+    localStorage.setItem('si.accounts',JSON.stringify(accts));
+  } else {
+    const a=accts[u];
+    if(!a||await hashPassword(pw,unb64(a.salt))!==a.hash) throw new Error('Wrong username or password');
+  }
+  return {mode:'local',id:accts[u].id,username:u};
+}
+async function cloudAuth(mode,u,pw){
+  const sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseKey);
+  if(mode==='up'){
+    const {data,error}=await sb.auth.signUp({email:userEmail(u),password:pw});
+    if(error) throw new Error(/registered|exists/i.test(error.message)?'That username is already taken':error.message);
+    if(!data.session) throw new Error('Your account was made, but Supabase is asking for email confirmation. Turn off "Confirm email" in Supabase, then sign in.');
+    return {mode:'cloud',id:data.user.id,username:u};
+  }
+  const {data,error}=await sb.auth.signInWithPassword({email:userEmail(u),password:pw});
+  if(error) throw new Error(/invalid/i.test(error.message)?'Wrong username or password':error.message);
+  return {mode:'cloud',id:data.user.id,username:u};
+}
+// Anything made before accounts existed goes to the first account created or signed into on this device
+function claimOldData(ns){
+  try{
+    if(localStorage.getItem('si.oldDataClaimed')) return;
+    for(const k of ['events','fired','profile','settings','tone','swHistory','view','theme','shade']){
+      const v=localStorage.getItem('si.'+k); if(v!=null&&localStorage.getItem(ns+k)==null) localStorage.setItem(ns+k,v);
+    }
+    localStorage.setItem('si.oldDataClaimed','1');
+  }catch{}
+}
+function endSession(){ try{ localStorage.removeItem('si.session'); }catch{} location.reload(); }
+
+function initGate(){
+  let mode='in';
+  const setMode=m=>{
+    mode=m; $('#gateSeg').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+    $('#gConfirmWrap').style.display=$('#gRules').style.display=m==='up'?'':'none';
+    $('#gPass').autocomplete=m==='up'?'new-password':'current-password';
+    $('#gGo').textContent=m==='up'?'Create account':'Sign in';
+    $('#gateSub').textContent=m==='up'?'Make an account to start planning your days.':'Welcome back. Sign in to your schedule.';
+    $('#gErr').textContent='';
+  };
+  $('#gateSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+  $('#gEye').onclick=()=>{ const show=$('#gPass').type==='password'; ['#gPass','#gPass2'].forEach(id=>$(id).type=show?'text':'password');
+    $('#gEye').innerHTML=icon(show?'lock':'eye'); $('#gEye').setAttribute('aria-label',show?'Hide password':'Show password'); };
+  $('#gUser').oninput=e=>{ e.target.value=e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''); $('#gErr').textContent=''; };
+  $('#gPass').oninput=$('#gPass2').oninput=()=>$('#gErr').textContent='';
+  $('#gNote').textContent=CLOUD?'Your account works on any phone or computer.':'Accounts are saved on this device for now. They move online once Daybloom is connected.';
+  if(!localStorage.getItem('si.accounts')&&!CLOUD) setMode('up');
+  $('#gateForm').onsubmit=async e=>{
+    e.preventDefault();
+    const u=$('#gUser').value.trim(), pw=$('#gPass').value, err=t=>{ $('#gErr').textContent=t; };
+    if(!USERNAME_RE.test(u)) return err('Usernames are 3 to 20 lowercase letters, numbers or _');
+    if(mode==='up'&&pw.length<8) return err('Passwords need at least 8 characters');
+    if(mode==='up'&&pw!==$('#gPass2').value) return err("The two passwords don't match");
+    if(!pw) return err('Enter your password');
+    const go=$('#gGo'); go.disabled=true; go.textContent=mode==='up'?'Creating account...':'Signing in...';
+    try{
+      const sess=CLOUD?await cloudAuth(mode,u,pw):await localAuth(mode,u,pw);
+      localStorage.setItem('si.session',JSON.stringify(sess));
+      claimOldData('si.u.'+sess.id+'.');
+      location.reload();
+    }catch(x){ err(x.message||'Something went wrong. Try again.'); go.disabled=false; go.textContent=mode==='up'?'Create account':'Sign in'; }
+  };
+  setTimeout(()=>$('#gUser').focus(),100);
+}
+
+if(!SI_USER){ initGate(); }
 else {
-  setStatus('off','Offline');
-  $('#offlineText').textContent='Friends turns on once Daybloom is connected online. Your calendar, clock and settings already work.';
-  if(pendingAdd) toast('Not online yet','Friends needs the app to be connected first','cloud');
+  if(!profile.name){ profile.name=SI_USER.username; store.set('profile',profile); renderProfileEditor(); renderMyCard(); }
+  $('#acctName').textContent='Signed in as @'+SI_USER.username;
+  $('#acctMode').textContent=SI_USER.mode==='cloud'?'Online account. Works on any device.':'Saved on this device only.';
+  $('#signOut').onclick=async()=>{
+    if(!await ask('Sign out?','Your schedule stays saved. Sign back in any time with your username and password.','Sign out')) return;
+    if(SI_USER.mode==='cloud'&&Cloud.api){ try{ await Cloud.api.signOut(); }catch{} }
+    endSession();
+  };
+  if(CLOUD&&SI_USER.mode==='cloud') startCloud(supabaseApi(CFG));
+  else {
+    setStatus('off','Offline');
+    $('#offlineText').textContent=CLOUD
+      ?'This account is saved only on this device. To use Friends, sign out and sign up for an online account.'
+      :'Friends turns on once Daybloom is connected online. Your calendar, clock and settings already work.';
+    if(pendingAdd) toast('Not online yet','Friends needs the app to be connected first','cloud');
+  }
 }
 window.SI={startCloud};
 </script>
