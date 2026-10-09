@@ -1,0 +1,12 @@
+# Sign-in settings for the Daybloom Supabase project.
+# Apply with: supabase config push --project-ref <ref>
+project_id = "daybloom"
+
+[auth]
+site_url = "https://vibe331212.github.io/daybloom/"
+minimum_password_length = 8
+
+[auth.email]
+# Daybloom signs people in with a username, so there is no email to confirm
+enable_signup = true
+enable_confirmations = false

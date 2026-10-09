@@ -3,3 +3,5 @@
 .DS_Store
 # First prototype, kept locally only
 schedule-it.html
+supabase/.temp/
+supabase/.branches/
