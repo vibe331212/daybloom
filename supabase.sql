@@ -310,3 +310,47 @@ do $$ begin
   alter publication supabase_realtime add table public.messages;
 exception when duplicate_object then null;
 end $$;
+
+-- ---------- Group chat photo and name ----------
+alter table public.conversations add column if not exists photo_kind text check (photo_kind in ('icon','animal','photo'));
+alter table public.conversations add column if not exists photo_value text check (char_length(photo_value) <= 200);
+alter table public.conversations add column if not exists photo_color text check (photo_color ~ '^#[0-9a-fA-F]{6}$');
+
+create or replace function public.update_chat(p_conv uuid, p_name text, p_kind text, p_value text, p_color text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_member(p_conv) then raise exception 'You are not in this chat'; end if;
+  if not (select is_group from public.conversations where id = p_conv) then raise exception 'Only group chats have their own photo and name'; end if;
+  if p_kind = 'photo' and split_part(coalesce(p_value, ''), '/', 1) <> p_conv::text then raise exception 'That photo belongs to a different chat'; end if;
+  update public.conversations
+     set name = nullif(left(btrim(coalesce(p_name, '')), 40), ''),
+         photo_kind = p_kind, photo_value = p_value, photo_color = p_color
+   where id = p_conv;
+end $$;
+revoke execute on function public.update_chat(uuid, text, text, text, text) from public, anon;
+grant  execute on function public.update_chat(uuid, text, text, text, text) to authenticated;
+
+-- Photos live in a private bucket, in a folder named after the chat. Only people in that chat can see or change them.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('chat-photos', 'chat-photos', false, 1048576, array['image/jpeg','image/png','image/webp'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+create or replace function public.in_chat_folder(obj_name text)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare folder text := split_part(obj_name, '/', 1);
+begin
+  if folder !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return false; end if;
+  return public.is_member(folder::uuid) and (select is_group from public.conversations where id = folder::uuid);
+end $$;
+revoke execute on function public.in_chat_folder(text) from public, anon;
+grant  execute on function public.in_chat_folder(text) to authenticated;
+
+drop policy if exists "chat photos: members see" on storage.objects;
+create policy "chat photos: members see" on storage.objects for select to authenticated
+  using (bucket_id = 'chat-photos' and public.in_chat_folder(name));
+drop policy if exists "chat photos: members add" on storage.objects;
+create policy "chat photos: members add" on storage.objects for insert to authenticated
+  with check (bucket_id = 'chat-photos' and public.in_chat_folder(name));
+drop policy if exists "chat photos: members remove" on storage.objects;
+create policy "chat photos: members remove" on storage.objects for delete to authenticated
+  using (bucket_id = 'chat-photos' and public.in_chat_folder(name));

@@ -290,6 +290,14 @@ textarea.inp{resize:vertical;min-height:70px}
 .chat-input textarea{resize:none;min-height:44px;max-height:120px;border-radius:22px;padding:11px 16px;line-height:1.35}
 .chat-input .send{width:44px;height:44px;flex:none}
 .chat-input .send svg{width:20px;height:20px}
+.chat-head{display:flex;gap:12px;align-items:center;min-width:0;text-align:left;border-radius:12px;padding:2px 6px 2px 2px}
+button.chat-head:hover{background:var(--c-surface2)}
+.avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.info-hero{display:flex;flex-direction:column;align-items:center;gap:12px;margin:10px 0 4px}
+.icon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(50px,1fr));gap:8px}
+.icon-pick{aspect-ratio:1;border-radius:50%;border:2px solid transparent;display:grid;place-items:center;padding:2px}
+.icon-pick.on{border-color:var(--accent)}
+.icon-pick .avatar{width:100%!important;height:100%!important}
 .pick-list{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto}
 .pick{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:12px;cursor:pointer}
 .pick:hover{background:var(--c-surface2)}
@@ -715,6 +723,7 @@ const ICONS = {
   chat:'<path d="M20 11.5c0 4-3.6 7-8 7-1.2 0-2.3-.2-3.3-.6L4.5 19.5l1.2-3.4C4.6 14.9 4 13.3 4 11.5c0-4 3.6-7 8-7s8 3 8 7Z"/>',
   send:'<path d="M4.5 11.8 19.5 5l-5.6 14.5-3-5.6Z"/><path d="m10.9 13.9 8.6-8.9"/>',
   logout:'<path d="M14 5H7.5A2.5 2.5 0 0 0 5 7.5v9A2.5 2.5 0 0 0 7.5 19H14"/><path d="M11 12h9M17 8.5l3.5 3.5-3.5 3.5"/>',
+  camera:'<path d="M4.5 8.5a2 2 0 0 1 2-2h2l1.5-2h4l1.5 2h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2Z"/><circle cx="12" cy="13" r="3.5"/>',
   globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5c-2.6-2.4-3.9-5.2-3.9-8.5s1.3-6.1 3.9-8.5Z"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
   moon:'<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5Z"/>',
@@ -1573,13 +1582,16 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       const convIds=ok(await sb.from('conversation_members').select('conversation_id').eq('user_id',uid)).map(r=>r.conversation_id);
       if(!convIds.length) return [];
       const [convs,members,msgs]=await Promise.all([
-        sb.from('conversations').select('id,is_group,name,last_message_at').in('id',convIds).then(ok),
+        sb.from('conversations').select('id,is_group,name,last_message_at,photo_kind,photo_value,photo_color').in('id',convIds).then(ok),
         sb.from('conversation_members').select('conversation_id,user_id').in('conversation_id',convIds).then(ok),
         sb.from('messages').select('id,conversation_id,sender,body,created_at').in('conversation_id',convIds).order('created_at',{ascending:false}).limit(300).then(ok)
       ]);
       const ids=[...new Set(members.map(m=>m.user_id))];
       const byId=Object.fromEntries(ok(await sb.from('profiles').select('id,name,username,shirt,style').in('id',ids)).map(p=>[p.id,p]));
-      return convs.map(c=>({...c,
+      // Group photos are private, so they're shown through short-lived signed links
+      const paths=convs.filter(c=>c.photo_kind==='photo'&&c.photo_value).map(c=>c.photo_value), urls={};
+      if(paths.length){ const {data}=await sb.storage.from('chat-photos').createSignedUrls(paths,3600); for(const u of data||[]) if(u.signedUrl) urls[u.path]=u.signedUrl; }
+      return convs.map(c=>({...c, photo_url:urls[c.photo_value]||null,
         members:members.filter(m=>m.conversation_id===c.id).map(m=>byId[m.user_id]||{id:m.user_id,name:'Someone'}),
         last:msgs.find(m=>m.conversation_id===c.id)||null
       })).sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at));
@@ -1589,6 +1601,13 @@ function supabaseApi({supabaseUrl,supabaseKey}){
     async startChat(friend){ return ok(await sb.rpc('start_chat',{p_friend:friend})); },
     async createGroup(name,ids){ return ok(await sb.rpc('create_group',{p_name:name,p_members:ids})); },
     async leaveChat(conv){ ok(await sb.rpc('leave_chat',{p_conv:conv})); },
+    async updateChat(conv,d){ ok(await sb.rpc('update_chat',{p_conv:conv,p_name:d.name||'',p_kind:d.kind,p_value:d.value,p_color:d.color})); },
+    async uploadChatPhoto(conv,blob){
+      const path=`${conv}/${uuid()}.jpg`;
+      ok(await sb.storage.from('chat-photos').upload(path,blob,{contentType:'image/jpeg',upsert:false}));
+      return path;
+    },
+    async removeChatPhoto(path){ try{ await sb.storage.from('chat-photos').remove([path]); }catch{} },
     listen(onMsg){
       const ch=sb.channel('daybloom-messages').on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},p=>onMsg(p.new)).subscribe();
       return ()=>sb.removeChannel(ch);
@@ -1725,7 +1744,87 @@ const Chat={list:[],open:null,msgs:[],read:store.get('chatRead',{})};
 const chatOther=c=>c.members.find(m=>m.id!==Cloud.me?.id);
 const chatName=c=>c.is_group?(c.name||c.members.filter(m=>m.id!==Cloud.me?.id).map(m=>m.name).join(', ')||'Group'):(chatOther(c)?.name||'Chat');
 const isUnread=c=>!!(c.last&&c.last.sender!==Cloud.me?.id&&(!Chat.read[c.id]||c.last.created_at>Chat.read[c.id]));
-const chatAvatar=(c,size)=>c.is_group?`<span class="avatar group" style="width:${size}px;height:${size}px">${icon('users')}</span>`:avatar(chatOther(c)||{},size);
+const GROUP_ICONS={
+  users:ICONS.users,
+  star:'<path d="M12 3.8l2.5 5.1 5.6.8-4.1 4 1 5.6-5-2.7-5 2.7 1-5.6-4.1-4 5.6-.8z"/>',
+  heart:'<path d="M12 19.5s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 6.6a4.3 4.3 0 0 1 7.5 2.9c0 5.6-7.5 10-7.5 10Z"/>',
+  music:'<path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>',
+  ball:'<circle cx="12" cy="12" r="8.5"/><path d="m12 8 3.3 2.4-1.3 3.9h-4l-1.3-3.9Z"/><path d="M12 8V3.5M15.3 10.4l4.3-1.4M14 14.3l2.6 3.6M10 14.3l-2.6 3.6M8.7 10.4 4.4 9"/>',
+  book:'<path d="M12 6.5c-1.8-1.3-4.3-2-7.5-2v13c3.2 0 5.7.7 7.5 2 1.8-1.3 4.3-2 7.5-2v-13c-3.2 0-5.7.7-7.5 2Z"/><path d="M12 6.5v13"/>',
+  game:'<path d="M7.5 8h9a4 4 0 0 1 3.9 4.9l-.9 3.9a2.2 2.2 0 0 1-3.8 1L14 16h-4l-1.7 1.8a2.2 2.2 0 0 1-3.8-1l-.9-3.9A4 4 0 0 1 7.5 8Z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r=".7" fill="currentColor"/><circle cx="17" cy="13.5" r=".7" fill="currentColor"/>',
+  paw:'<circle cx="7" cy="10" r="1.8"/><circle cx="10.2" cy="6.5" r="1.8"/><circle cx="13.8" cy="6.5" r="1.8"/><circle cx="17" cy="10" r="1.8"/><path d="M12 11.5c-3 0-5.5 3.2-5.5 5.4 0 1.6 1.4 2.3 2.9 1.8 1-.3 1.8-.5 2.6-.5s1.6.2 2.6.5c1.5.5 2.9-.2 2.9-1.8 0-2.2-2.5-5.4-5.5-5.4Z"/>',
+  rocket:'<path d="M12 3.5c3 2 4.5 5.3 4.5 9.5l-2 3h-5l-2-3c0-4.2 1.5-7.5 4.5-9.5Z"/><circle cx="12" cy="10" r="1.6"/><path d="M9.5 16 7 19.5M14.5 16l2.5 3.5M12 17v3"/>'
+};
+const inkOn=hex=>{ const h=(hex||'#7c5cff').replace('#',''), r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16); return (.299*r+.587*g+.114*b)>170?'#1c1d24':'#ffffff'; };
+function chatAvatar(c,size){
+  const box=`width:${size}px;height:${size}px`;
+  if(!c.is_group) return avatar(chatOther(c)||{},size);
+  if(c.photo_kind==='photo'&&c.photo_url) return `<span class="avatar" style="${box}"><img src="${esc(c.photo_url)}" alt=""></span>`;
+  if(c.photo_kind==='animal'&&ANIMALS[c.photo_value]) return avatar({style:c.photo_value,shirt:c.photo_color||BG_COLORS[0]},size);
+  const ic=GROUP_ICONS[c.photo_kind==='icon'?c.photo_value:'users']||GROUP_ICONS.users;
+  const col=c.photo_color?`background:${c.photo_color};color:${inkOn(c.photo_color)}`:'';
+  return `<span class="avatar group" style="${box};${col}"><svg class="i" viewBox="0 0 24 24">${ic}</svg></span>`;
+}
+// Turn any photo into a small square picture before it's uploaded
+async function squarePhoto(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error("That file isn't a photo Daybloom can use")); i.src=url; });
+    const S=320, k=Math.min(img.naturalWidth,img.naturalHeight), cv=document.createElement('canvas'); cv.width=cv.height=S;
+    cv.getContext('2d').drawImage(img,(img.naturalWidth-k)/2,(img.naturalHeight-k)/2,k,k,0,0,S,S);
+    return await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('Could not read that photo')),'image/jpeg',.85));
+  }finally{ URL.revokeObjectURL(url); }
+}
+function openChatInfo(c){
+  Chat.open=null; $('#sheet').classList.remove('chat-sheet');
+  const d={name:c.name||'',kind:c.photo_kind||null,value:c.photo_value||null,color:c.photo_color||null,file:null,preview:c.photo_url||null};
+  const view=()=>({is_group:true,photo_kind:d.kind,photo_value:d.value,photo_color:d.color,photo_url:d.preview});
+  $('#sheet').innerHTML=`<div class="modal-top"><button class="icon-btn" id="infoBack" aria-label="Back to chat">${icon('left')}</button><h2>Group info</h2><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
+    <div class="info-hero"><span id="infoPhoto"></span>
+      <button class="btn ghost" id="pickPhoto">${icon('camera')}Choose photo</button><input type="file" id="photoFile" accept="image/*" hidden></div>
+    <div class="field"><label>Or pick an icon</label><div class="icon-grid" id="iconGrid"></div></div>
+    <div class="field"><label>Or an animal</label><div class="icon-grid" id="animalGrid"></div></div>
+    <div class="field"><label>Color</label><div class="chips" id="infoColors"></div></div>
+    <div class="field"><label for="infoName">Group name</label><input class="inp" id="infoName" maxlength="40" placeholder="${esc(chatName({...c,name:''}))}"></div>
+    <div class="field"><label>${c.members.length} people</label><div class="pick-list">${c.members.map(m=>`<div class="pick" style="cursor:default">${avatar(m,40)}<span><b>${esc(m.name)}${m.id===Cloud.me.id?' (you)':''}</b><span class="u">@${esc(m.username||'')}</span></span></div>`).join('')}</div></div>
+    <div class="gate-err" id="infoErr" role="alert"></div>
+    <div class="modal-actions"><button class="btn danger" id="infoLeave">${icon('logout')}Leave group</button><button class="btn primary" id="infoSave">Save</button></div>`;
+  $('#infoName').value=d.name;
+  const paint=()=>{
+    $('#infoPhoto').innerHTML=chatAvatar(view(),104);
+    const color=d.color||BG_COLORS[0];
+    $('#iconGrid').innerHTML=Object.keys(GROUP_ICONS).map(k=>`<button type="button" class="icon-pick${d.kind==='icon'&&d.value===k||(!d.kind&&k==='users')?' on':''}" data-k="${k}" aria-label="${k} icon">${chatAvatar({is_group:true,photo_kind:'icon',photo_value:k,photo_color:color},46)}</button>`).join('');
+    $('#animalGrid').innerHTML=Object.entries(ANIMALS).map(([k,a])=>`<button type="button" class="icon-pick${d.kind==='animal'&&d.value===k?' on':''}" data-k="${k}" aria-label="${a.name}">${avatar({style:k,shirt:color},46)}</button>`).join('');
+    $('#infoColors').innerHTML=BG_COLORS.map(c2=>`<button type="button" class="swatch${c2===d.color?' on':''}" style="background:${c2}" data-c="${c2}" aria-label="Color ${c2}"></button>`).join('');
+    $('#iconGrid').querySelectorAll('.icon-pick').forEach(b=>b.onclick=()=>{ d.kind='icon'; d.value=b.dataset.k; d.color=d.color||BG_COLORS[0]; d.file=null; d.preview=null; paint(); });
+    $('#animalGrid').querySelectorAll('.icon-pick').forEach(b=>b.onclick=()=>{ d.kind='animal'; d.value=b.dataset.k; d.color=d.color||BG_COLORS[0]; d.file=null; d.preview=null; paint(); });
+    $('#infoColors').querySelectorAll('.swatch').forEach(b=>b.onclick=()=>{ d.color=b.dataset.c; if(d.kind==='photo') { d.kind='icon'; d.value='users'; d.file=null; d.preview=null; } else if(!d.kind){ d.kind='icon'; d.value='users'; } paint(); });
+  };
+  paint();
+  $('#pickPhoto').onclick=()=>$('#photoFile').click();
+  $('#photoFile').onchange=async e=>{
+    const f=e.target.files[0]; e.target.value=''; if(!f) return;
+    try{ d.file=await squarePhoto(f); d.kind='photo'; d.preview=URL.createObjectURL(d.file); $('#infoErr').textContent=''; paint(); }
+    catch(x){ $('#infoErr').textContent=x.message; }
+  };
+  const back=()=>openChat(c.id);
+  $('#infoBack').onclick=back;
+  $('#sheet [data-close]').onclick=()=>closeScrim('#sheetScrim');
+  $('#infoLeave').onclick=async()=>{
+    if(!await ask('Leave this group?',`You'll stop getting messages from "${chatName(c)}".`,'Leave',true)) return;
+    try{ await Cloud.api.leaveChat(c.id); closeScrim('#sheetScrim'); await refreshChats(); }catch(x){ toast('Could not leave',x.message,'x'); }
+  };
+  $('#infoSave').onclick=async()=>{
+    const btn=$('#infoSave'); btn.disabled=true; btn.textContent='Saving...';
+    try{
+      let value=d.value;
+      if(d.kind==='photo'&&d.file) value=await Cloud.api.uploadChatPhoto(c.id,d.file);
+      await Cloud.api.updateChat(c.id,{name:$('#infoName').value.trim(),kind:d.kind,value,color:d.color});
+      if(c.photo_kind==='photo'&&c.photo_value&&c.photo_value!==value) Cloud.api.removeChatPhoto(c.photo_value);
+      await refreshChats(); toast('Saved','Group info updated','check'); openChat(c.id);
+    }catch(x){ $('#infoErr').textContent=x.message; btn.disabled=false; btn.textContent='Save'; }
+  };
+}
 function fmtMsgTime(iso){
   const t=new Date(iso), today=new Date(); today.setHours(0,0,0,0);
   const day=new Date(t); day.setHours(0,0,0,0); const diff=Math.round((today-day)/86400000);
@@ -1769,17 +1868,14 @@ async function openChat(id){
   Chat.open=id; Chat.msgs=[];
   $('#sheet').classList.add('chat-sheet');
   $('#sheet').innerHTML=`<div class="chat">
-    <div class="modal-top chat-top"><div style="display:flex;gap:12px;align-items:center;min-width:0">${chatAvatar(c,44)}
-      <div style="min-width:0"><h2 class="chat-title">${esc(chatName(c))}</h2><div class="sub" style="margin:0">${c.is_group?`${c.members.length} people`:'@'+esc(chatOther(c)?.username||'')}</div></div></div>
-      <div style="display:flex;gap:8px;flex:none">${c.is_group?`<button class="icon-btn" id="leaveChat" aria-label="Leave group">${icon('logout')}</button>`:''}<button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div></div>
+    <div class="modal-top chat-top"><${c.is_group?'button type="button" id="chatInfoBtn" aria-label="Group info"':'div'} class="chat-head">${chatAvatar(c,44)}
+      <span style="min-width:0;display:block"><h2 class="chat-title">${esc(chatName(c))}</h2><span class="sub" style="margin:0;display:block">${c.is_group?`${c.members.length} people · tap for info`:'@'+esc(chatOther(c)?.username||'')}</span></span></${c.is_group?'button':'div'}>
+      <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
     <div class="chat-msgs" id="chatMsgs" aria-live="polite"><div class="empty" style="margin:auto">Loading...</div></div>
     <form class="chat-input" id="chatForm"><textarea class="inp" id="chatText" rows="1" maxlength="1000" placeholder="Message" aria-label="Message"></textarea>
       <button class="round go send" aria-label="Send">${icon('send')}</button></form></div>`;
   $('#sheet [data-close]').onclick=()=>{ closeScrim('#sheetScrim'); Chat.open=null; };
-  if(c.is_group) $('#leaveChat').onclick=async()=>{
-    if(!await ask('Leave this group?',`You'll stop getting messages from "${chatName(c)}".`,'Leave',true)) return;
-    try{ await Cloud.api.leaveChat(c.id); closeScrim('#sheetScrim'); Chat.open=null; await refreshChats(); }catch(e){ toast('Could not leave',e.message,'x'); }
-  };
+  if(c.is_group) $('#chatInfoBtn').onclick=()=>openChatInfo(c);
   const ta=$('#chatText');
   ta.oninput=()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,120)+'px'; };
   ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey&&!('ontouchstart' in window)){ e.preventDefault(); $('#chatForm').requestSubmit(); } };
