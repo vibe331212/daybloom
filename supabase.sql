@@ -434,3 +434,42 @@ revoke execute on function public.current_code() from public, anon;
 grant  execute on function public.current_code() to authenticated;
 revoke execute on function public.add_friend(text) from public, anon;
 grant  execute on function public.add_friend(text) to authenticated;
+
+-- ---------- Reactions on messages (like tapbacks) ----------
+-- One reaction per person per message. Removing a reaction sets kind to null,
+-- so live updates only ever send rows the reader is allowed to see.
+create table if not exists public.message_reactions (
+  message_id uuid not null references public.messages(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  kind text check (kind in ('heart','like','dislike','haha','wow','question')),
+  updated_at timestamptz not null default now(),
+  primary key (message_id, user_id)
+);
+create index if not exists message_reactions_conversation_idx on public.message_reactions(conversation_id);
+alter table public.message_reactions enable row level security;
+revoke all on public.message_reactions from anon, authenticated;
+grant select on public.message_reactions to authenticated;
+drop policy if exists "reactions: members read" on public.message_reactions;
+create policy "reactions: members read" on public.message_reactions for select to authenticated
+  using (public.is_member(conversation_id));
+
+create or replace function public.set_reaction(p_message uuid, p_kind text)
+returns void language plpgsql security definer set search_path = public as $$
+declare conv uuid;
+begin
+  select conversation_id into conv from public.messages where id = p_message;
+  if conv is null or not public.is_member(conv) then raise exception 'That message is not in your chats'; end if;
+  if not public.can_post(conv) then raise exception 'You can only react in chats with your friends'; end if;
+  if p_kind is not null and p_kind not in ('heart','like','dislike','haha','wow','question') then raise exception 'Unknown reaction'; end if;
+  insert into public.message_reactions (message_id, conversation_id, user_id, kind, updated_at)
+  values (p_message, conv, auth.uid(), p_kind, now())
+  on conflict (message_id, user_id) do update set kind = excluded.kind, updated_at = now();
+end $$;
+revoke execute on function public.set_reaction(uuid, text) from public, anon;
+grant  execute on function public.set_reaction(uuid, text) to authenticated;
+
+do $$ begin
+  alter publication supabase_realtime add table public.message_reactions;
+exception when duplicate_object then null;
+end $$;

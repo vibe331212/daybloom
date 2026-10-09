@@ -281,6 +281,27 @@ textarea.inp{resize:vertical;min-height:70px}
 .chat-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chat-msgs{flex:1;overflow-y:auto;padding:12px 2px;display:flex;flex-direction:column;gap:4px;overscroll-behavior:contain}
 .chat-msgs>*{flex-shrink:0}
+.chat{position:relative}
+.bub-wrap{position:relative;display:flex;flex-direction:column;max-width:78%;-webkit-touch-callout:none}
+.bub-wrap.me{align-self:flex-end}
+.bub-wrap.them{align-self:flex-start}
+.bub-wrap .bub{max-width:100%}
+.bub-wrap.has-rx{margin-top:14px}
+.rx{position:absolute;top:-14px;display:flex;align-items:center;gap:1px;padding:3px 6px;border-radius:999px;background:var(--c-surface);border:1.5px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,.15);color:var(--accent);font-size:11px;font-weight:700;line-height:1;z-index:1}
+.bub-wrap.them .rx{right:-10px}
+.bub-wrap.me .rx{left:-10px}
+.rx.mine{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.rx svg,.rx-pick svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.rx span{margin-left:2px}
+.rx-menu{position:absolute;z-index:6;display:flex;flex-direction:column;align-items:center;gap:6px;animation:pop .15s ease}
+@keyframes pop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+.rx-bar{display:flex;gap:2px;padding:5px;border-radius:999px;background:var(--c-surface);border:1px solid var(--border);box-shadow:0 12px 30px rgba(0,0,0,.28)}
+.rx-pick{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
+.rx-pick:hover{background:var(--c-surface2);color:var(--text)}
+.rx-pick.on{background:var(--accent);color:var(--on-accent)}
+.rx-pick svg{width:20px;height:20px}
+.rx-extra{display:flex;gap:6px;align-items:center;background:var(--c-surface);border:1px solid var(--border);border-radius:14px;padding:6px 10px;font-size:12px;color:var(--muted);box-shadow:0 8px 20px rgba(0,0,0,.2);max-width:260px}
+.rx-extra button{font-weight:700;color:var(--accent);padding:2px 4px}
 .bub{max-width:78%;padding:9px 13px;border-radius:18px;font-size:15px;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
 .bub.me{align-self:flex-end;background:var(--accent);color:var(--on-accent);border-bottom-right-radius:6px}
 .bub.them{align-self:flex-start;background:var(--c-surface2);border:1px solid var(--border);border-bottom-left-radius:6px}
@@ -1669,8 +1690,13 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       return path;
     },
     async removeChatPhoto(path){ try{ await sb.storage.from('chat-photos').remove([path]); }catch{} },
-    listen(onMsg){
-      const ch=sb.channel('daybloom-messages').on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},p=>onMsg(p.new)).subscribe();
+    async reactions(conv){ return ok(await sb.from('message_reactions').select('message_id,user_id,kind').eq('conversation_id',conv).not('kind','is',null)); },
+    async react(msg,kind){ ok(await sb.rpc('set_reaction',{p_message:msg,p_kind:kind})); },
+    listen(onMsg,onReaction){
+      const ch=sb.channel('daybloom-messages')
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},p=>onMsg(p.new))
+        .on('postgres_changes',{event:'*',schema:'public',table:'message_reactions'},p=>{ if(p.new&&p.new.message_id) onReaction(p.new); })
+        .subscribe();
       return ()=>sb.removeChannel(ch);
     }
   };
@@ -1699,7 +1725,7 @@ async function startCloud(api){
     await api.saveProfile(profile);
     await pushEvents();
     renderMyCard(); await refreshFriends(); await refreshChats();
-    try{ api.listen(onNewMessage); }catch{}
+    try{ api.listen(onNewMessage,onReaction); }catch{}
     setInterval(pollChats,15000);
     if(pendingAdd){ const c=pendingAdd; pendingAdd=null; try{ sessionStorage.removeItem('si.pendingAdd'); }catch{} offerAdd(c); }
   }catch(e){
@@ -1840,7 +1866,7 @@ $('#refreshFriends').onclick=()=>refreshFriends();
 onView.friends=()=>{ refreshFriends(); refreshChats(); };
 
 /* ================= Private chats ================= */
-const Chat={list:[],open:null,msgs:[],read:store.get('chatRead',{}),media:{},mediaWanted:new Set(),attach:null};
+const Chat={list:[],open:null,msgs:[],read:store.get('chatRead',{}),media:{},mediaWanted:new Set(),attach:null,rx:{}};
 const chatOther=c=>c.members.find(m=>m.id!==Cloud.me?.id);
 const chatName=c=>c.is_group?(c.name||c.members.filter(m=>m.id!==Cloud.me?.id).map(m=>m.name).join(', ')||'Group'):(chatOther(c)?.name||'Chat');
 const isUnread=c=>!!(c.last&&c.last.sender!==Cloud.me?.id&&(!Chat.read[c.id]||c.last.created_at>Chat.read[c.id]));
@@ -1953,17 +1979,100 @@ function renderMsgs(){
     const t=new Date(m.created_at), mine=m.sender===Cloud.me.id;
     if(!prev||t-new Date(prev.created_at)>15*60000) html+=`<div class="bub-time">${fmtMsgTime(m.created_at)}${fmtMsgTime(m.created_at).includes(':')?'':', '+fmtTime(`${pad(t.getHours())}:${pad(t.getMinutes())}`)}</div>`;
     if(c.is_group&&!mine&&(!prev||prev.sender!==m.sender)) html+=`<div class="bub-who">${esc(c.members.find(x=>x.id===m.sender)?.name||'Someone')}</div>`;
+    let bub;
     if(m.image_path||m.localUrl){
       const src=m.localUrl||Chat.media[m.image_path];
       if(!src&&m.image_path) Chat.mediaWanted.add(m.image_path);
-      html+=`<div class="bub photo ${mine?'me':'them'}${m.pending?' pending':''}">${src?`<button class="ph" data-src="${esc(src)}" aria-label="Open photo"><img src="${esc(src)}" alt="Photo"></button>`:'<span class="ph-wait"></span>'}${m.body?`<div class="cap">${esc(m.body)}</div>`:''}</div>`;
-    } else html+=`<div class="bub ${mine?'me':'them'}${m.pending?' pending':''}">${esc(m.body)}</div>`;
+      bub=`<div class="bub photo ${mine?'me':'them'}${m.pending?' pending':''}">${src?`<button class="ph" data-src="${esc(src)}" aria-label="Open photo"><img src="${esc(src)}" alt="Photo"></button>`:'<span class="ph-wait"></span>'}${m.body?`<div class="cap">${esc(m.body)}</div>`:''}</div>`;
+    } else bub=`<div class="bub ${mine?'me':'them'}${m.pending?' pending':''}">${esc(m.body)}</div>`;
+    const rx=rxSummary(m.id);
+    html+=`<div class="bub-wrap ${mine?'me':'them'}${rx?' has-rx':''}" data-id="${m.pending?'':m.id}">${bub}${rx}</div>`;
     prev=m;
   }
-  el.innerHTML=html; el.scrollTop=el.scrollHeight;
-  el.querySelectorAll('img').forEach(i=>i.onload=()=>{ el.scrollTop=el.scrollHeight; });
-  el.querySelectorAll('.ph').forEach(b=>b.onclick=()=>openPhoto(b.dataset.src));
+  const nearBottom=el.scrollHeight-el.scrollTop-el.clientHeight<80||!el.children.length||el.querySelector('.empty');
+  const keep=el.scrollTop;
+  el.innerHTML=html; el.scrollTop=nearBottom?el.scrollHeight:keep;
+  el.querySelectorAll('img').forEach(i=>i.onload=()=>{ if(nearBottom) el.scrollTop=el.scrollHeight; });
+  el.querySelectorAll('.ph').forEach(b=>b.onclick=e=>{ if(rxJustOpened) return e.preventDefault(); openPhoto(b.dataset.src); });
+  bindReactionGestures(el);
   loadMedia();
+}
+
+/* ---------- Reactions (like tapbacks) ---------- */
+const RX=[
+  ['heart','Loved','<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20Z" fill="currentColor" stroke="none"/>'],
+  ['like','Liked','<path d="M7.5 10.5H5a1 1 0 0 0-1 1V19a1 1 0 0 0 1 1h2.5ZM9 20h7.6a2 2 0 0 0 2-1.6l1.3-6a2 2 0 0 0-2-2.4h-4.4l.6-2.8c.3-1.4-.6-2.7-2-2.7L9 10.5Z" fill="currentColor" stroke="none"/>'],
+  ['dislike','Disliked','<g transform="rotate(180 12 12)"><path d="M7.5 10.5H5a1 1 0 0 0-1 1V19a1 1 0 0 0 1 1h2.5ZM9 20h7.6a2 2 0 0 0 2-1.6l1.3-6a2 2 0 0 0-2-2.4h-4.4l.6-2.8c.3-1.4-.6-2.7-2-2.7L9 10.5Z" fill="currentColor" stroke="none"/></g>'],
+  ['haha','Laughed at','<text x="12" y="10.6" text-anchor="middle" font-size="8.2" font-weight="900" font-family="Inter,system-ui,sans-serif" fill="currentColor" stroke="none">HA</text><text x="12" y="19.8" text-anchor="middle" font-size="8.2" font-weight="900" font-family="Inter,system-ui,sans-serif" fill="currentColor" stroke="none">HA</text>'],
+  ['wow','Emphasized','<path d="M8.5 4.5v9.5M15.5 4.5v9.5" stroke-width="3.2"/><circle cx="8.5" cy="19" r="1.9" fill="currentColor" stroke="none"/><circle cx="15.5" cy="19" r="1.9" fill="currentColor" stroke="none"/>'],
+  ['question','Questioned','<path d="M8.3 8.6a3.7 3.7 0 1 1 5.3 3.3c-1.1.5-1.6 1.3-1.6 2.5v.5" stroke-width="2.8"/><circle cx="12" cy="19.2" r="1.9" fill="currentColor" stroke="none"/>']
+];
+const rxIcon=k=>`<svg viewBox="0 0 24 24" aria-hidden="true">${(RX.find(r=>r[0]===k)||RX[0])[2]}</svg>`;
+function rxSummary(id){
+  const r=Chat.rx[id]; if(!r) return '';
+  const kinds=Object.values(r); if(!kinds.length) return '';
+  const order=[...new Set(kinds)].slice(0,3), mine=!!r[Cloud.me.id];
+  return `<button class="rx${mine?' mine':''}" aria-label="${kinds.length} reaction${kinds.length>1?'s':''}">${order.map(rxIcon).join('')}${kinds.length>1?`<span>${kinds.length}</span>`:''}</button>`;
+}
+async function loadReactions(id){
+  try{
+    const rows=await Cloud.api.reactions(id); if(Chat.open!==id) return;
+    const map={}; for(const r of rows) (map[r.message_id]||(map[r.message_id]={}))[r.user_id]=r.kind;
+    if(JSON.stringify(map)!==JSON.stringify(Chat.rx)){ Chat.rx=map; renderMsgs(); }
+  }catch{}
+}
+function onReaction(r){
+  if(!chatIsShowing()||r.conversation_id!==Chat.open) return;
+  const m=(Chat.rx[r.message_id]||(Chat.rx[r.message_id]={}));
+  if(r.kind) m[r.user_id]=r.kind; else delete m[r.user_id];
+  renderMsgs();
+}
+let rxJustOpened=false;
+function closeReactionMenu(){ $('#rxMenu')?.remove(); }
+function openReactionMenu(wrap){
+  closeReactionMenu();
+  const id=wrap.dataset.id, m=Chat.msgs.find(x=>x.id===id); if(!id||!m) return;
+  const chatEl=$('.chat'), c=Chat.list.find(x=>x.id===Chat.open), mineKind=Chat.rx[id]?.[Cloud.me.id];
+  const who=Object.entries(Chat.rx[id]||{}).map(([u,k])=>`${u===Cloud.me.id?'You':esc(c?.members.find(x=>x.id===u)?.name||'Someone')}: ${(RX.find(r=>r[0]===k)||[])[1]||''}`).join(' · ');
+  const menu=document.createElement('div'); menu.id='rxMenu'; menu.className='rx-menu';
+  menu.innerHTML=`<div class="rx-bar" role="toolbar" aria-label="React to this message">${RX.map(([k,label])=>`<button class="rx-pick${mineKind===k?' on':''}" data-k="${k}" aria-label="${label}" aria-pressed="${mineKind===k}">${rxIcon(k)}</button>`).join('')}</div>
+    ${who||m.body?`<div class="rx-extra">${who?`<span>${who}</span>`:''}${m.body?`<button id="rxCopy">Copy</button>`:''}</div>`:''}`;
+  chatEl.appendChild(menu);
+  // Sit just above the message (or below it if there's no room), kept inside the chat
+  const cr=chatEl.getBoundingClientRect(), wr=wrap.getBoundingClientRect(), mw=menu.offsetWidth, mh=menu.offsetHeight;
+  let top=wr.top-cr.top-mh-8; if(top<56) top=wr.bottom-cr.top+8;
+  let left=(wrap.classList.contains('me')?wr.right-cr.left-mw:wr.left-cr.left); left=Math.max(4,Math.min(left,cr.width-mw-4));
+  menu.style.top=top+'px'; menu.style.left=left+'px';
+  menu.querySelectorAll('.rx-pick').forEach(b=>b.onclick=async e=>{
+    e.stopPropagation(); closeReactionMenu();
+    const k=b.dataset.k, next=mineKind===k?null:k, before=Chat.rx[id]?.[Cloud.me.id];
+    const slot=(Chat.rx[id]||(Chat.rx[id]={})); if(next) slot[Cloud.me.id]=next; else delete slot[Cloud.me.id];
+    renderMsgs();
+    try{ await Cloud.api.react(id,next); }
+    catch(x){ if(before) slot[Cloud.me.id]=before; else delete slot[Cloud.me.id]; renderMsgs(); toast('Could not react',x.message,'x'); }
+  });
+  $('#rxCopy')&&($('#rxCopy').onclick=async e=>{ e.stopPropagation(); closeReactionMenu(); try{ await navigator.clipboard.writeText(m.body); toast('Copied','Message copied'); }catch{} });
+  rxJustOpened=true; setTimeout(()=>rxJustOpened=false,350);
+}
+document.addEventListener('pointerdown',e=>{ if($('#rxMenu')&&!e.target.closest('#rxMenu')&&!e.target.closest('.rx')) closeReactionMenu(); },true);
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeReactionMenu(); });
+// Double-tap, press and hold, or right-click a message to react. Tap a reaction badge to see who reacted.
+function bindReactionGestures(el){
+  el.onscroll=closeReactionMenu;
+  el.querySelectorAll('.bub-wrap').forEach(w=>{
+    if(!w.dataset.id) return;
+    let timer=null, sx=0, sy=0, lastTap=0;
+    w.ondblclick=e=>{ e.preventDefault(); openReactionMenu(w); };
+    w.oncontextmenu=e=>{ e.preventDefault(); openReactionMenu(w); };
+    w.onpointerdown=e=>{ if(e.pointerType==='mouse') return; sx=e.clientX; sy=e.clientY; timer=setTimeout(()=>{ timer=null; openReactionMenu(w); },450); };
+    w.onpointermove=e=>{ if(timer&&Math.hypot(e.clientX-sx,e.clientY-sy)>8){ clearTimeout(timer); timer=null; } };
+    w.onpointerup=e=>{
+      if(timer){ clearTimeout(timer); timer=null; }
+      if(e.pointerType!=='mouse'){ const now=Date.now(); if(now-lastTap<300){ lastTap=0; openReactionMenu(w); } else lastTap=now; }
+    };
+    w.onpointercancel=()=>{ if(timer){ clearTimeout(timer); timer=null; } };
+    const badge=w.querySelector('.rx'); if(badge) badge.onclick=e=>{ e.stopPropagation(); openReactionMenu(w); };
+  });
 }
 // Photos are private, so each one is shown through a short-lived signed link
 async function loadMedia(){
@@ -2056,7 +2165,9 @@ async function openChat(id){
   ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey&&!('ontouchstart' in window)){ e.preventDefault(); $('#chatForm').requestSubmit(); } };
   $('#chatForm').onsubmit=e=>{ e.preventDefault(); sendChat(); };
   openScrim('#sheetScrim');
+  Chat.rx={};
   try{ Chat.msgs=await Cloud.api.messages(id); }catch(e){ toast('Could not load messages',e.message,'cloud'); }
+  loadReactions(id);
   if(Chat.open!==id) return;
   renderMsgs(); markRead(c);
 }
@@ -2091,7 +2202,7 @@ function onNewMessage(m){
 async function pollChats(){
   if(!Cloud.on||document.hidden) return;
   await refreshChats();
-  if(chatIsShowing()){ const id=Chat.open; try{ const fresh=await Cloud.api.messages(id); if(Chat.open===id&&fresh.length!==Chat.msgs.filter(x=>!x.pending).length){ Chat.msgs=fresh; renderMsgs(); } }catch{} }
+  if(chatIsShowing()){ const id=Chat.open; try{ const fresh=await Cloud.api.messages(id); if(Chat.open===id&&fresh.length!==Chat.msgs.filter(x=>!x.pending).length){ Chat.msgs=fresh; renderMsgs(); } }catch{} loadReactions(id); }
 }
 $('#newGroup').onclick=async()=>{
   if(!Cloud.on) return toast('Not online','Chats work once you are online','cloud');
