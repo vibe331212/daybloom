@@ -346,6 +346,22 @@ button.chat-head:hover{background:var(--c-surface2)}
 .code-timer{width:min(240px,100%);margin:-8px auto 18px;font-size:12px;color:var(--muted);font-weight:600;display:flex;flex-direction:column;gap:7px;align-items:center}
 .code-bar{width:100%;height:5px;border-radius:99px;background:var(--c-surface2);overflow:hidden}
 .code-bar i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:inherit;transition:width 1s linear}
+.agree{display:flex;gap:10px;align-items:flex-start;text-align:left;font-size:13px;color:var(--muted);margin-top:14px;line-height:1.45;cursor:pointer}
+.agree input{width:20px;height:20px;accent-color:var(--accent);flex:none;margin-top:1px}
+.agree a,.rules-box a{color:var(--accent);font-weight:600}
+.reason-list{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.reason{display:flex;gap:12px;align-items:center;padding:11px 14px;border-radius:12px;border:1px solid var(--border);background:var(--c-surface2);cursor:pointer;font-weight:600;font-size:14px}
+.reason input{accent-color:var(--accent);width:18px;height:18px}
+.act-list{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.act{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:14px;background:var(--c-surface2);border:1px solid var(--border);font-weight:600;text-align:left;width:100%}
+.act.danger{color:#ff5a6a}
+.act svg{width:20px;height:20px}
+.rules-box{background:var(--c-surface2);border:1px solid var(--border);border-radius:14px;padding:12px 16px;margin-top:12px;font-size:14px;line-height:1.5}
+.rules-box li{margin:4px 0}
+.blocked-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border)}
+.blocked-row:last-child{border:0}
+.pick .more{margin-left:auto;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--muted)}
+.pick .more:hover{background:var(--c-surface2);color:var(--text)}
 .pick-list{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto}
 .pick{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:12px;cursor:pointer}
 .pick:hover{background:var(--c-surface2)}
@@ -653,6 +669,13 @@ html.locked body{overflow:hidden}
         <div class="card">
           <h2>Account</h2>
           <div class="set-row"><div><div class="k" id="acctName"></div><div class="v" id="acctMode"></div></div><button class="btn ghost" id="signOut">Sign out</button></div>
+          <div class="set-row"><div><div class="k">Delete account</div><div class="v">Erases your account, events, friends and the messages you sent</div></div><button class="btn danger" id="deleteAcct">Delete</button></div>
+        </div>
+        <div class="card">
+          <h2>Help and safety</h2>
+          <div class="set-row"><div><div class="k">Community rules</div><div class="v">How everyone stays safe on Daybloom</div></div><a class="btn ghost" id="rulesLink" target="_blank" rel="noopener">Read</a></div>
+          <div class="set-row"><div><div class="k">Blocked people</div><div class="v" id="blockedSummary">No one</div></div><button class="btn ghost" id="blockedBtn">Manage</button></div>
+          <div class="set-row"><div><div class="k">Contact support</div><div class="v">Send a problem or question to the people who run Daybloom</div></div><button class="btn ghost" id="supportBtn">Write</button></div>
         </div>
         <div class="card">
           <h2>On your phone</h2>
@@ -675,6 +698,7 @@ html.locked body{overflow:hidden}
     <div class="field"><label for="gPass">Password</label><div class="pw"><input class="inp" id="gPass" name="password" type="password" autocomplete="current-password" maxlength="72"><button type="button" class="pw-eye" id="gEye" aria-label="Show password"><svg class="i" data-icon="eye"></svg></button></div></div>
     <div class="field" id="gConfirmWrap" style="display:none"><label for="gPass2">Confirm password</label><input class="inp" id="gPass2" type="password" autocomplete="new-password" maxlength="72"></div>
     <div class="hint" id="gRules" style="display:none;text-align:left">Username: 3 to 20 lowercase letters, numbers or _. Password: at least 8 characters.</div>
+    <label class="agree" id="gAgreeWrap" style="display:none"><input type="checkbox" id="gAgree"><span>I agree to the <a id="gRulesLink" target="_blank" rel="noopener">Community Rules and Terms</a>. I'm at least 13 and I'll be kind.</span></label>
     <div class="gate-err" id="gErr" role="alert"></div>
     <button class="btn primary gate-go" id="gGo" type="submit">Sign in</button>
     <div class="gate-note" id="gNote"></div>
@@ -730,6 +754,9 @@ html.locked body{overflow:hidden}
 <input type="file" id="inLibrary" accept="image/*" hidden>
 <input type="file" id="inCamera" accept="image/*" capture="environment" hidden>
 <input type="file" id="inFile" accept="image/*,.heic,.heif" hidden>
+
+<!-- Safety: report, block, rules, support -->
+<div class="scrim" id="safetyScrim"><div class="modal" id="safety" role="dialog" aria-modal="true" style="width:min(440px,100%)"></div></div>
 
 <!-- Confirm -->
 <div class="scrim" id="askScrim">
@@ -795,6 +822,10 @@ const ICONS = {
   image:'<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="9.5" r="1.8"/><path d="m4 17 5-5 4 4 2.5-2.5L20 18"/>',
   folder:'<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/>',
   camera:'<path d="M4.5 8.5a2 2 0 0 1 2-2h2l1.5-2h4l1.5 2h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2Z"/><circle cx="12" cy="13" r="3.5"/>',
+  more:'<circle cx="5.5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor"/>',
+  block:'<circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/>',
+  report:'<path d="M6 21V4M6 4.5h10l-2 3.5 2 3.5H6"/>',
+  shield:'<path d="M12 3.5 19 6v5.5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
   globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5c-2.6-2.4-3.9-5.2-3.9-8.5s1.3-6.1 3.9-8.5Z"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
   moon:'<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5Z"/>',
@@ -814,6 +845,9 @@ const $ = s => document.querySelector(s);
 const Native=(()=>{ const h=window.webkit?.messageHandlers?.daybloom; return { on:!!h, send(m){ try{ h&&h.postMessage(m); }catch{} } }; })();
 const buzz=(style='light')=>Native.send({type:'haptic',style});
 const SITE_URL='https://vibe331212.github.io/daybloom/';
+const RULES_URL=SITE_URL+'terms.html';
+const BAD_WORDS=/\b\w*(fuck|shit|bitch|cunt|whore|slut|faggot|nigger|nigga|retard)\w*\b|\b(ass|asshole|asshat|bastard|dick|dickhead|pussy|fag|cock|twat|wanker)\b/gi;
+const clean=t=>t==null?t:String(t).replace(BAD_WORDS,'****');
 const pad = n => String(n).padStart(2,'0');
 const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const parseKey = k => { const [y,m,d]=k.split('-').map(Number); return new Date(y,m-1,d); };
@@ -1669,7 +1703,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
         sb.from('profiles').select('id,name,username,shirt,style').in('id',ids).then(ok),
         sb.from('events').select('id,owner,title,date,time,all_day,notes,repeat,color').in('owner',ids).then(ok).then(rows=>rows.map(e=>({...e,allDay:e.all_day})))
       ]);
-      return profs.map(p=>({...p,events:evs.filter(e=>e.owner===p.id)}));
+      return profs.map(p=>({...p,name:clean(p.name),events:evs.filter(e=>e.owner===p.id).map(e=>({...e,title:clean(e.title),notes:clean(e.notes)}))}));
     },
     async addFriend(code){ return ok(await sb.rpc('add_friend',{p_code:code})); },
     async removeFriend(id){ ok(await sb.rpc('remove_friend',{p_friend:id})); },
@@ -1688,12 +1722,12 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       // Group photos are private, so they're shown through short-lived signed links
       const paths=convs.filter(c=>c.photo_kind==='photo'&&c.photo_value).map(c=>c.photo_value), urls={};
       if(paths.length){ const {data}=await sb.storage.from('chat-photos').createSignedUrls(paths,3600); for(const u of data||[]) if(u.signedUrl) urls[u.path]=u.signedUrl; }
-      return convs.map(c=>({...c, photo_url:urls[c.photo_value]||null,
-        members:members.filter(m=>m.conversation_id===c.id).map(m=>byId[m.user_id]||{id:m.user_id,name:'Someone'}),
-        last:msgs.find(m=>m.conversation_id===c.id)||null
+      return convs.map(c=>({...c, name:clean(c.name), photo_url:urls[c.photo_value]||null,
+        members:members.filter(m=>m.conversation_id===c.id).map(m=>{ const p=byId[m.user_id]; return p?{...p,name:clean(p.name)}:{id:m.user_id,name:'Someone'}; }),
+        last:(l=>l&&{...l,body:clean(l.body)})(msgs.find(m=>m.conversation_id===c.id))
       })).sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at));
     },
-    async messages(conv){ return ok(await sb.from('messages').select('id,conversation_id,sender,body,image_path,created_at').eq('conversation_id',conv).order('created_at',{ascending:false}).limit(150)).reverse(); },
+    async messages(conv){ return ok(await sb.from('messages').select('id,conversation_id,sender,body,image_path,created_at').eq('conversation_id',conv).order('created_at',{ascending:false}).limit(150)).reverse().map(m=>({...m,body:clean(m.body)})); },
     async send(conv,body){ return ok(await sb.from('messages').insert({conversation_id:conv,body}).select('id,conversation_id,sender,body,image_path,created_at').single()); },
     async sendPhoto(conv,blob,body){
       const path=`${conv}/${uuid()}.jpg`;
@@ -1709,6 +1743,18 @@ function supabaseApi({supabaseUrl,supabaseKey}){
     async startChat(friend){ return ok(await sb.rpc('start_chat',{p_friend:friend})); },
     async createGroup(name,ids){ return ok(await sb.rpc('create_group',{p_name:name,p_members:ids})); },
     async leaveChat(conv){ ok(await sb.rpc('leave_chat',{p_conv:conv})); },
+    async blocks(){ return ok(await sb.from('blocks').select('blocked,blocked_name,blocked_username,created_at').eq('blocker',uid).order('created_at',{ascending:false})); },
+    async block(user){ ok(await sb.rpc('block_user',{p_user:user})); },
+    async unblock(user){ ok(await sb.rpc('unblock_user',{p_user:user})); },
+    async report(user,message,reason,details){ ok(await sb.rpc('report_content',{p_user:user||null,p_message:message||null,p_reason:reason,p_details:details||''})); },
+    async feedback(text){ ok(await sb.rpc('send_feedback',{p_details:text})); },
+    async deleteAccount(){
+      // Photos can only be removed by the person who uploaded them, so clear ours before the account goes
+      const mine=ok(await sb.from('messages').select('image_path').eq('sender',uid).not('image_path','is',null)).map(r=>r.image_path);
+      for(let i=0;i<mine.length;i+=100) await sb.storage.from('chat-media').remove(mine.slice(i,i+100)).catch(()=>{});
+      ok(await sb.rpc('delete_account'));
+      await sb.auth.signOut().catch(()=>{});
+    },
     async updateChat(conv,d){ ok(await sb.rpc('update_chat',{p_conv:conv,p_name:d.name||'',p_kind:d.kind,p_value:d.value,p_color:d.color})); },
     async uploadChatPhoto(conv,blob){
       const path=`${conv}/${uuid()}.jpg`;
@@ -1728,7 +1774,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
   };
 }
 
-const Cloud={api:null,on:false,me:null,friends:store.get('friendsCache',[])};
+const Cloud={api:null,on:false,me:null,friends:store.get('friendsCache',[]),blocked:new Set(),blockList:[]};
 let pushTimer=null, profTimer=null, pendingAdd=null;
 function setStatus(state,text){
   const s=$('#cloudStatus'); s.className='status'+(state==='on'?' on':state==='err'?' err':''); s.querySelector('span').textContent=text;
@@ -1750,7 +1796,9 @@ async function startCloud(api){
     if(!profile.name && Cloud.me.name && Cloud.me.name!=='Me'){ profile.name=Cloud.me.name; store.set('profile',profile); renderProfileEditor(); }
     await api.saveProfile(profile);
     await pushEvents();
+    await refreshBlocks();
     renderMyCard(); await refreshFriends(); await refreshChats();
+    askRulesIfNeeded();
     try{ api.listen(onNewMessage,onReaction); }catch{}
     setInterval(pollChats,15000);
     if(pendingAdd){ const c=pendingAdd; pendingAdd=null; try{ sessionStorage.removeItem('si.pendingAdd'); }catch{} offerAdd(c); }
@@ -1876,7 +1924,10 @@ function openFriend(f){
   $('#sheet').innerHTML=`<div class="modal-top"><div style="display:flex;gap:12px;align-items:center">${avatar(f,52)}<div><h2>${esc(f.name)}</h2><div class="sub" style="margin:0">${f.username?'@'+esc(f.username)+' · ':''}Next 2 weeks</div></div></div>
       <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
     <div class="ev-list">${body||`<div class="empty">${icon('sparkle')}<div>${esc(f.name)} has nothing shared for the next 2 weeks.</div></div>`}</div>
-    <div class="modal-actions"><button class="btn danger" id="unfriend">${icon('trash')}Remove friend</button><button class="btn primary" id="msgFriend">${icon('chat')}Message</button></div>`;
+    <div class="modal-actions"><button class="btn danger" id="unfriend">${icon('trash')}Remove friend</button><button class="btn primary" id="msgFriend">${icon('chat')}Message</button></div>
+    <div class="modal-actions" style="margin-top:10px;justify-content:center"><button class="btn ghost" id="blockFriend">${icon('block')}Block</button><button class="btn ghost" id="reportFriend">${icon('report')}Report</button></div>`;
+  $('#blockFriend').onclick=()=>blockPerson(f);
+  $('#reportFriend').onclick=()=>openReport({person:f});
   $('#sheet').classList.remove('chat-sheet'); Chat.open=null;
   $('#msgFriend').onclick=async()=>{
     try{ const id=await Cloud.api.startChat(f.id); await refreshChats(); openChat(id); }
@@ -1930,10 +1981,11 @@ function openChatInfo(c){
     <div class="field"><label>Or an animal</label><div class="icon-grid" id="animalGrid"></div></div>
     <div class="field"><label>Color</label><div class="chips" id="infoColors"></div></div>
     <div class="field"><label for="infoName">Group name</label><input class="inp" id="infoName" maxlength="40" placeholder="${esc(chatName({...c,name:''}))}"></div>
-    <div class="field"><label>${c.members.length} people</label><div class="pick-list">${c.members.map(m=>`<div class="pick" style="cursor:default">${avatar(m,40)}<span><b>${esc(m.name)}${m.id===Cloud.me.id?' (you)':''}</b><span class="u">@${esc(m.username||'')}</span></span></div>`).join('')}</div></div>
+    <div class="field"><label>${c.members.length} people</label><div class="pick-list">${c.members.map(m=>`<div class="pick" style="cursor:default">${avatar(m,40)}<span><b>${esc(m.name)}${m.id===Cloud.me.id?' (you)':''}</b><span class="u">@${esc(m.username||'')}</span></span>${m.id===Cloud.me.id?'':`<button type="button" class="more" data-u="${m.id}" aria-label="Options for ${esc(m.name)}">${icon('more')}</button>`}</div>`).join('')}</div></div>
     <div class="gate-err" id="infoErr" role="alert"></div>
     <div class="modal-actions"><button class="btn danger" id="infoLeave">${icon('logout')}Leave group</button><button class="btn primary" id="infoSave">Save</button></div>`;
   $('#infoName').value=d.name;
+  document.querySelectorAll('#sheet .pick .more').forEach(b=>b.onclick=()=>personActions(c.members.find(m=>m.id===b.dataset.u)));
   const paint=()=>{
     $('#infoPhoto').innerHTML=chatAvatar(view(),104);
     const color=d.color||BG_COLORS[0];
@@ -1982,7 +2034,8 @@ function updateChatDot(){ const n=Cloud.on?Chat.list.filter(isUnread).length:0, 
 function renderChats(){
   const el=$('#chatList');
   if(!Cloud.on){ el.innerHTML=`<div class="empty" style="padding:18px 10px">Chats work once you're online.</div>`; updateChatDot(); return; }
-  el.innerHTML=Chat.list.length?Chat.list.map(c=>{
+  const shown=Chat.list.filter(c=>c.is_group||!Cloud.blocked.has(chatOther(c)?.id));
+  el.innerHTML=shown.length?shown.map(c=>{
     const l=c.last, who=!l?'':l.sender===Cloud.me.id?'You: ':c.is_group?`${c.members.find(m=>m.id===l.sender)?.name||'Someone'}: `:'';
     return `<button class="friend chat-row${isUnread(c)?' unread':''}" data-id="${c.id}">${chatAvatar(c,48)}
       <span class="fn"><b>${esc(chatName(c))}</b><span>${l?esc(who+(l.body||'Photo')):'No messages yet'}</span></span>
@@ -2003,6 +2056,7 @@ function renderMsgs(){
   if(!Chat.msgs.length){ el.innerHTML=`<div class="empty" style="margin:auto">${icon('chat')}<div>Say hi! Only the people in this chat can see these messages.</div></div>`; return; }
   let html='', prev=null;
   for(const m of Chat.msgs){
+    if(Cloud.blocked.has(m.sender)) continue;          // messages from people you blocked stay hidden
     const t=new Date(m.created_at), mine=m.sender===Cloud.me.id;
     if(!prev||t-new Date(prev.created_at)>15*60000) html+=`<div class="bub-time">${fmtMsgTime(m.created_at)}${fmtMsgTime(m.created_at).includes(':')?'':', '+fmtTime(`${pad(t.getHours())}:${pad(t.getMinutes())}`)}</div>`;
     if(c.is_group&&!mine&&(!prev||prev.sender!==m.sender)) html+=`<div class="bub-who">${esc(c.members.find(x=>x.id===m.sender)?.name||'Someone')}</div>`;
@@ -2063,7 +2117,7 @@ function openReactionMenu(wrap){
   const who=Object.entries(Chat.rx[id]||{}).map(([u,k])=>`${u===Cloud.me.id?'You':esc(c?.members.find(x=>x.id===u)?.name||'Someone')}: ${(RX.find(r=>r[0]===k)||[])[1]||''}`).join(' · ');
   const menu=document.createElement('div'); menu.id='rxMenu'; menu.className='rx-menu';
   menu.innerHTML=`<div class="rx-bar" role="toolbar" aria-label="React to this message">${RX.map(([k,label])=>`<button class="rx-pick${mineKind===k?' on':''}" data-k="${k}" aria-label="${label}" aria-pressed="${mineKind===k}">${rxIcon(k)}</button>`).join('')}</div>
-    ${who||m.body?`<div class="rx-extra">${who?`<span>${who}</span>`:''}${m.body?`<button id="rxCopy">Copy</button>`:''}</div>`:''}`;
+    <div class="rx-extra">${who?`<span>${who}</span>`:''}${m.body?`<button id="rxCopy">Copy</button>`:''}${m.sender!==Cloud.me.id?`<button id="rxReport" style="color:#ff5a6a">Report</button>`:''}</div>`;
   chatEl.appendChild(menu);
   // Sit just above the message (or below it if there's no room), kept inside the chat
   const cr=chatEl.getBoundingClientRect(), wr=wrap.getBoundingClientRect(), mw=menu.offsetWidth, mh=menu.offsetHeight;
@@ -2078,6 +2132,7 @@ function openReactionMenu(wrap){
     try{ await Cloud.api.react(id,next); }
     catch(x){ if(before) slot[Cloud.me.id]=before; else delete slot[Cloud.me.id]; renderMsgs(); toast('Could not react',x.message,'x'); }
   });
+  $('#rxReport')&&($('#rxReport').onclick=e=>{ e.stopPropagation(); closeReactionMenu(); const c2=Chat.list.find(x=>x.id===Chat.open); openReport({person:c2?.members.find(x=>x.id===m.sender)||{id:m.sender,name:'Someone'},message:m}); });
   $('#rxCopy')&&($('#rxCopy').onclick=async e=>{ e.stopPropagation(); closeReactionMenu(); try{ await navigator.clipboard.writeText(m.body); toast('Copied','Message copied'); }catch{} });
   rxJustOpened=true; setTimeout(()=>rxJustOpened=false,350);
 }
@@ -2176,7 +2231,7 @@ async function openChat(id){
   $('#sheet').innerHTML=`<div class="chat">
     <div class="modal-top chat-top"><${c.is_group?'button type="button" id="chatInfoBtn" aria-label="Group info"':'div'} class="chat-head">${chatAvatar(c,44)}
       <span style="min-width:0;display:block"><h2 class="chat-title">${esc(chatName(c))}</h2><span class="sub" style="margin:0;display:block">${c.is_group?`${c.members.length} people · tap for info`:'@'+esc(chatOther(c)?.username||'')}</span></span></${c.is_group?'button':'div'}>
-      <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
+      <span style="display:flex;gap:8px;flex:none">${c.is_group?'':`<button class="icon-btn" id="chatMore" aria-label="More options">${icon('more')}</button>`}<button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></span></div>
     <div class="chat-msgs" id="chatMsgs" aria-live="polite"><div class="empty" style="margin:auto">Loading...</div></div>
     <div class="chat-attach" id="chatAttach" hidden><span class="att"><img id="attImg" alt="Photo to send"><button type="button" class="att-x" id="attX" aria-label="Remove photo">${icon('x')}</button></span></div>
     <form class="chat-input" id="chatForm"><button type="button" class="icon-btn att-btn" id="chatPhotoBtn" aria-label="Add a photo">${icon('camera')}</button>
@@ -2187,6 +2242,7 @@ async function openChat(id){
   $('#attX').onclick=()=>setAttach(null);
   $('#sheet [data-close]').onclick=()=>{ closeScrim('#sheetScrim'); Chat.open=null; };
   if(c.is_group) $('#chatInfoBtn').onclick=()=>openChatInfo(c);
+  else $('#chatMore').onclick=()=>personActions(chatOther(c));
   const ta=$('#chatText');
   ta.oninput=()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,120)+'px'; };
   ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey&&!('ontouchstart' in window)){ e.preventDefault(); $('#chatForm').requestSubmit(); } };
@@ -2216,6 +2272,7 @@ async function sendChat(){
   if(Chat.open===conv) renderMsgs(); renderChats();
 }
 function onNewMessage(m){
+  m={...m,body:clean(m.body)};
   const c=Chat.list.find(x=>x.id===m.conversation_id);
   if(!c){ refreshChats().then(()=>{ if(m.sender!==Cloud.me.id) toast('New chat',(m.body||'Sent a photo').slice(0,80),'chat'); }); return; }
   c.last=m; c.last_message_at=m.created_at; Chat.list.sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at));
@@ -2223,7 +2280,7 @@ function onNewMessage(m){
     if(!Chat.msgs.some(x=>x.id===m.id)&&!(m.sender===Cloud.me.id&&Chat.msgs.some(x=>x.pending&&x.body===m.body))){ Chat.msgs.push(m); renderMsgs(); }
     markRead(c); return;
   }
-  if(m.sender!==Cloud.me.id) toast(c.members.find(x=>x.id===m.sender)?.name||'A friend',(m.body||'Sent a photo').slice(0,80),'chat');
+  if(m.sender!==Cloud.me.id&&!Cloud.blocked.has(m.sender)) toast(c.members.find(x=>x.id===m.sender)?.name||'A friend',clean(m.body||'Sent a photo').slice(0,80),'chat');
   renderChats();
 }
 // Backup in case live updates miss something (for example after the phone was asleep)
@@ -2265,6 +2322,118 @@ setInterval(()=>{ renderUpNext(); if(Cloud.on&&$('#view-friends').classList.cont
     try{ sessionStorage.setItem('si.pendingAdd',pendingAdd); }catch{} }
   else { try{ pendingAdd=sessionStorage.getItem('si.pendingAdd'); }catch{} } }
 document.querySelector(`.tab[data-view="${store.get('view','calendar')}"]`)?.click();
+
+/* ================= Safety: block, report, rules, support ================= */
+async function refreshBlocks(){
+  if(!Cloud.on) return;
+  try{ Cloud.blockList=await Cloud.api.blocks(); Cloud.blocked=new Set(Cloud.blockList.map(b=>b.blocked)); }catch{}
+  $('#blockedSummary').textContent=Cloud.blockList.length?`${Cloud.blockList.length} blocked`:'No one';
+}
+const openSafety=html=>{ $('#safety').innerHTML=html; openScrim('#safetyScrim'); };
+const closeSafety=()=>closeScrim('#safetyScrim');
+$('#safetyScrim').addEventListener('click',e=>{ if(e.target.id==='safetyScrim'&&!$('#safety').dataset.locked) closeSafety(); });
+function personActions(p){
+  if(!p||p.id===Cloud.me?.id) return;
+  openSafety(`<h2>${esc(p.name||'Someone')}</h2>${p.username?`<div class="sub">@${esc(p.username)}</div>`:''}
+    <div class="act-list"><button class="act danger" id="actReport">${icon('report')}Report ${esc(p.name||'this person')}</button>
+    <button class="act danger" id="actBlock">${icon('block')}Block ${esc(p.name||'this person')}</button>
+    <button class="act" id="actCancel">Cancel</button></div>`);
+  $('#actReport').onclick=()=>openReport({person:p});
+  $('#actBlock').onclick=()=>{ closeSafety(); blockPerson(p); };
+  $('#actCancel').onclick=closeSafety;
+}
+async function blockPerson(p){
+  if(!await ask(`Block ${p.name||'this person'}?`,`They'll be removed as a friend, can't add you again, and can't message you. Their messages in group chats will be hidden. You can unblock them in Settings.`,'Block',true)) return;
+  try{
+    await Cloud.api.block(p.id); buzz('success');
+    closeScrim('#sheetScrim'); Chat.open=null;
+    await refreshBlocks(); await refreshFriends(); await refreshChats();
+    toast('Blocked',`${p.name||'They'} can't contact you anymore`,'block');
+  }catch(e){ toast('Could not block',e.message,'x'); }
+}
+const REASONS=[['bullying','Bullying or being mean'],['inappropriate','Sexual or inappropriate'],['hate','Hateful or offensive'],['unsafe','Makes me feel unsafe'],['spam','Spam or fake account'],['other','Something else']];
+function openReport({person,message}){
+  openSafety(`<h2>Report ${message?'message':esc(person?.name||'person')}</h2>
+    <div class="sub">Reports are private. ${esc(person?.name||'They')} won't know it was you.</div>
+    ${message?`<div class="rules-box" style="max-height:90px;overflow:auto">${message.body?esc(message.body):'Photo'}</div>`:''}
+    <div class="reason-list">${REASONS.map(([v,l],i)=>`<label class="reason"><input type="radio" name="reason" value="${v}"${i?'':' checked'}>${l}</label>`).join('')}</div>
+    <div class="field"><label for="repDetails">Anything else? (optional)</label><textarea class="inp" id="repDetails" maxlength="1000" placeholder="What happened?"></textarea></div>
+    <label class="agree"><input type="checkbox" id="repBlock" checked><span>Also block ${esc(person?.name||'them')}</span></label>
+    <div class="gate-err" id="repErr" role="alert"></div>
+    <div class="modal-actions"><button class="btn ghost" id="repCancel">Cancel</button><button class="btn danger" id="repSend">${icon('report')}Send report</button></div>`);
+  $('#repCancel').onclick=closeSafety;
+  $('#repSend').onclick=async()=>{
+    const btn=$('#repSend'); btn.disabled=true;
+    try{
+      await Cloud.api.report(message?null:person?.id,message?.id,document.querySelector('input[name=reason]:checked').value,$('#repDetails').value.trim());
+      const alsoBlock=$('#repBlock').checked; closeSafety(); buzz('success');
+      toast('Report sent','Thank you. The Daybloom team will look at it.','shield');
+      if(alsoBlock&&person?.id){ try{ await Cloud.api.block(person.id); closeScrim('#sheetScrim'); Chat.open=null; await refreshBlocks(); await refreshFriends(); await refreshChats(); }catch{} }
+    }catch(e){ $('#repErr').textContent=e.message; btn.disabled=false; }
+  };
+}
+$('#blockedBtn').onclick=()=>{
+  if(!Cloud.on) return toast('Not online','Blocking works when you are online','cloud');
+  const draw=()=>{
+    openSafety(`<div class="modal-top"><h2>Blocked people</h2><button class="icon-btn" id="blkClose" aria-label="Close">${icon('x')}</button></div>
+      <div style="margin-top:10px">${Cloud.blockList.length?Cloud.blockList.map(b=>`<div class="blocked-row"><div><b>${esc(clean(b.blocked_name)||'Someone')}</b><div class="sub" style="margin:0">@${esc(b.blocked_username||'')}</div></div><button class="btn ghost" data-u="${b.blocked}">Unblock</button></div>`).join(''):'<div class="empty" style="padding:20px">You haven\'t blocked anyone.</div>'}</div>`);
+    $('#blkClose').onclick=closeSafety;
+    document.querySelectorAll('#safety .blocked-row button').forEach(b=>b.onclick=async()=>{
+      try{ await Cloud.api.unblock(b.dataset.u); await refreshBlocks(); await refreshChats(); draw(); toast('Unblocked','They can be added as a friend again with a new code','check'); }catch(e){ toast('Could not unblock',e.message,'x'); }
+    });
+  };
+  refreshBlocks().then(draw);
+};
+$('#supportBtn').onclick=()=>{
+  if(!Cloud.on) return toast('Not online','Connect to the internet to contact support','cloud');
+  openSafety(`<h2>Contact support</h2><div class="sub">Tell us about a problem, a question, or an idea. To report a person or a message, use Report instead.</div>
+    <div class="field"><label for="supText">Your message</label><textarea class="inp" id="supText" maxlength="1000" style="min-height:120px"></textarea></div>
+    <div class="gate-err" id="supErr" role="alert"></div>
+    <div class="modal-actions"><button class="btn ghost" id="supCancel">Cancel</button><button class="btn primary" id="supSend">${icon('send')}Send</button></div>`);
+  $('#supCancel').onclick=closeSafety;
+  $('#supSend').onclick=async()=>{
+    try{ await Cloud.api.feedback($('#supText').value); closeSafety(); toast('Sent','Thanks! The Daybloom team will read it.','check'); }
+    catch(e){ $('#supErr').textContent=e.message; }
+  };
+};
+$('#rulesLink').href=RULES_URL; $('#gRulesLink').href=RULES_URL;
+// Everyone agrees to the community rules once (bump RULES_VERSION if the rules change)
+const RULES_VERSION=1;
+function askRulesIfNeeded(){
+  if((settings.rulesAccepted||0)>=RULES_VERSION) return;
+  $('#safety').dataset.locked='1';
+  openSafety(`<div style="text-align:center">${icon('shield')}</div><h2 style="text-align:center;margin-top:6px">Daybloom Community Rules</h2>
+    <div class="rules-box"><ul style="padding-left:18px;margin:0">
+      <li>Be kind. No bullying, threats, or making fun of people.</li>
+      <li>No hateful, sexual, violent, or dangerous content.</li>
+      <li>Don't share anyone's private information.</li>
+      <li>Only add friends you know in real life.</li>
+      <li>If someone makes you uncomfortable, block and report them.</li></ul>
+      <p style="margin:10px 0 0">Breaking these rules can get content or accounts removed. <a href="${RULES_URL}" target="_blank" rel="noopener">Read the full rules and terms</a>.</p></div>
+    <div class="modal-actions" style="justify-content:center"><button class="btn primary" id="rulesOk">I agree</button></div>`);
+  $('#rulesOk').onclick=()=>{ settings.rulesAccepted=RULES_VERSION; store.set('settings',settings); delete $('#safety').dataset.locked; closeSafety(); };
+}
+$('#deleteAcct').onclick=()=>{
+  const name=SI_USER?.username||'';
+  openSafety(`<h2 style="color:#ff5a6a">Delete your account?</h2>
+    <div class="sub" style="line-height:1.5">This erases your account, your events, your friends, and the messages and photos you sent. It can't be undone. Group chats you were in stay for the other people, without your messages.</div>
+    <div class="field"><label for="delName">Type your username to confirm</label><input class="inp" id="delName" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="${esc(name)}"></div>
+    <div class="gate-err" id="delErr" role="alert"></div>
+    <div class="modal-actions"><button class="btn ghost" id="delCancel">Cancel</button><button class="btn danger" id="delGo">${icon('trash')}Delete forever</button></div>`);
+  $('#delCancel').onclick=closeSafety;
+  $('#delGo').onclick=async()=>{
+    if($('#delName').value.trim().toLowerCase()!==name){ $('#delErr').textContent='That doesn\'t match your username'; return; }
+    const btn=$('#delGo'); btn.disabled=true; btn.textContent='Deleting...';
+    try{
+      Native.send({type:'reminders',items:[]}); Native.send({type:'timer',at:null});
+      if(SI_USER.mode==='cloud'){ if(!Cloud.api) throw new Error('Connect to the internet to delete your account'); await Cloud.api.deleteAccount(); }
+      else { const a=JSON.parse(localStorage.getItem('si.accounts')||'{}'); delete a[SI_USER.username]; localStorage.setItem('si.accounts',JSON.stringify(a)); }
+      // Remove everything this account saved on the device
+      Object.keys(localStorage).filter(k=>k.startsWith(window.SI_NS)).forEach(k=>localStorage.removeItem(k));
+      endSession();
+    }catch(e){ $('#delErr').textContent=e.message; btn.disabled=false; btn.textContent='Delete forever'; }
+  };
+};
 
 /* ================= Accounts ================= */
 const CFG=window.SCHEDULE_IT_CONFIG||{};
@@ -2319,7 +2488,7 @@ function initGate(){
   let mode='in';
   const setMode=m=>{
     mode=m; $('#gateSeg').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
-    $('#gConfirmWrap').style.display=$('#gRules').style.display=m==='up'?'':'none';
+    $('#gConfirmWrap').style.display=$('#gRules').style.display=$('#gAgreeWrap').style.display=m==='up'?'':'none';
     $('#gPass').autocomplete=m==='up'?'new-password':'current-password';
     $('#gGo').textContent=m==='up'?'Create account':'Sign in';
     $('#gateSub').textContent=m==='up'?'Make an account to start planning your days.':'Welcome back. Sign in to your schedule.';
@@ -2339,12 +2508,14 @@ function initGate(){
     if(!USERNAME_RE.test(u)) return err('Usernames are 3 to 20 lowercase letters, numbers or _');
     if(mode==='up'&&pw.length<8) return err('Passwords need at least 8 characters');
     if(mode==='up'&&pw!==$('#gPass2').value) return err("The two passwords don't match");
+    if(mode==='up'&&!$('#gAgree').checked) return err('Please agree to the Community Rules to make an account');
     if(!pw) return err('Enter your password');
     const go=$('#gGo'); go.disabled=true; go.textContent=mode==='up'?'Creating account...':'Signing in...';
     try{
       if(CLOUD_SET_UP&&!CLOUD) throw new Error("You're offline. Connect to the internet and try again.");
       const sess=CLOUD?await cloudAuth(mode,u,pw):await localAuth(mode,u,pw);
       localStorage.setItem('si.session',JSON.stringify(sess));
+      if(mode==='up'){ const k='si.u.'+sess.id+'.settings', st=JSON.parse(localStorage.getItem(k)||'{}'); st.rulesAccepted=RULES_VERSION; localStorage.setItem(k,JSON.stringify(st)); }
       claimOldData('si.u.'+sess.id+'.');
       location.reload();
     }catch(x){ err(x.message||'Something went wrong. Try again.'); go.disabled=false; go.textContent=mode==='up'?'Create account':'Sign in'; }

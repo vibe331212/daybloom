@@ -413,22 +413,7 @@ begin
 end $$;
 
 -- Adding a friend only works with a code that's still active (a few seconds of grace for slow typing)
-create or replace function public.add_friend(p_code text)
-returns json language plpgsql security definer set search_path = public as $$
-declare f public.profiles; owner uuid;
-begin
-  if auth.uid() is null then raise exception 'Not signed in'; end if;
-  select user_id into owner from public.friend_codes
-   where code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'))
-     and expires_at > now() - interval '5 seconds';
-  if owner is null then raise exception 'That code is wrong or has already changed. Ask your friend for the new one.'; end if;
-  if owner = auth.uid() then raise exception 'That is your own code'; end if;
-  select * into f from public.profiles where id = owner;
-  insert into public.friendships (user_id, friend_id)
-  values (auth.uid(), f.id), (f.id, auth.uid())
-  on conflict do nothing;
-  return json_build_object('id', f.id, 'name', f.name, 'username', f.username, 'shirt', f.shirt, 'style', f.style);
-end $$;
+-- add_friend is defined at the bottom, with blocking
 
 revoke execute on function public.current_code() from public, anon;
 grant  execute on function public.current_code() to authenticated;
@@ -473,3 +458,162 @@ do $$ begin
   alter publication supabase_realtime add table public.message_reactions;
 exception when duplicate_object then null;
 end $$;
+
+-- ================= Safety: block, report, filter, delete account =================
+
+-- Deleting an account must not delete group chats that other people are still in
+alter table public.conversations alter column created_by drop not null;
+alter table public.conversations drop constraint if exists conversations_created_by_fkey;
+alter table public.conversations add constraint conversations_created_by_fkey
+  foreign key (created_by) references public.profiles(id) on delete set null;
+
+-- ---------- Bad-word filter (used on messages, names and group names) ----------
+create or replace function public.clean_text(t text)
+returns text language sql immutable as $$
+  select case when t is null then null else regexp_replace(t,
+    '\m\w*(fuck|shit|bitch|cunt|whore|slut|faggot|nigger|nigga|retard)\w*\M|\m(ass|asshole|asshat|bastard|dick|dickhead|pussy|fag|cock|twat|wanker)\M',
+    '****', 'gi') end;
+$$;
+create or replace function public.clean_message() returns trigger language plpgsql as $$
+begin new.body := public.clean_text(new.body); return new; end $$;
+drop trigger if exists messages_clean on public.messages;
+create trigger messages_clean before insert on public.messages for each row execute function public.clean_message();
+create or replace function public.clean_name() returns trigger language plpgsql as $$
+begin new.name := public.clean_text(new.name); return new; end $$;
+drop trigger if exists profiles_clean on public.profiles;
+create trigger profiles_clean before insert or update of name on public.profiles for each row execute function public.clean_name();
+drop trigger if exists conversations_clean on public.conversations;
+create trigger conversations_clean before insert or update of name on public.conversations for each row execute function public.clean_name();
+
+-- ---------- Blocking ----------
+create table if not exists public.blocks (
+  blocker uuid not null references public.profiles(id) on delete cascade,
+  blocked uuid not null references public.profiles(id) on delete cascade,
+  blocked_name text,
+  blocked_username text,
+  created_at timestamptz not null default now(),
+  primary key (blocker, blocked),
+  check (blocker <> blocked)
+);
+alter table public.blocks enable row level security;
+revoke all on public.blocks from anon, authenticated;
+grant select on public.blocks to authenticated;
+drop policy if exists "blocks: my own" on public.blocks;
+create policy "blocks: my own" on public.blocks for select to authenticated using (blocker = auth.uid());
+
+create or replace function public.is_blocked_between(a uuid, b uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.blocks where (blocker = a and blocked = b) or (blocker = b and blocked = a));
+$$;
+
+-- Blocking also ends the friendship, which stops one-on-one messages and schedule sharing
+create or replace function public.block_user(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or p_user is null or p_user = auth.uid() then raise exception 'You cannot block that account'; end if;
+  insert into public.blocks (blocker, blocked, blocked_name, blocked_username)
+  select auth.uid(), p.id, p.name, p.username from public.profiles p where p.id = p_user
+  on conflict do nothing;
+  delete from public.friendships
+   where (user_id = auth.uid() and friend_id = p_user) or (user_id = p_user and friend_id = auth.uid());
+end $$;
+
+create or replace function public.unblock_user(p_user uuid)
+returns void language sql security definer set search_path = public as $$
+  delete from public.blocks where blocker = auth.uid() and blocked = p_user;
+$$;
+
+-- Adding a friend now also refuses anyone you've blocked or who blocked you
+create or replace function public.add_friend(p_code text)
+returns json language plpgsql security definer set search_path = public as $$
+declare f public.profiles; owner uuid;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  select user_id into owner from public.friend_codes
+   where code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'))
+     and expires_at > now() - interval '5 seconds';
+  if owner is null then raise exception 'That code is wrong or has already changed. Ask your friend for the new one.'; end if;
+  if owner = auth.uid() then raise exception 'That is your own code'; end if;
+  if public.is_blocked_between(auth.uid(), owner) then raise exception 'You cannot add this person.'; end if;
+  select * into f from public.profiles where id = owner;
+  insert into public.friendships (user_id, friend_id)
+  values (auth.uid(), f.id), (f.id, auth.uid())
+  on conflict do nothing;
+  return json_build_object('id', f.id, 'name', f.name, 'username', f.username, 'shirt', f.shirt, 'style', f.style);
+end $$;
+
+-- ---------- Reports (only the app's owner can read these, in the Supabase dashboard) ----------
+create table if not exists public.reports (
+  id uuid primary key default gen_random_uuid(),
+  reporter uuid references public.profiles(id) on delete set null,
+  reported_user uuid references public.profiles(id) on delete set null,
+  reported_username text,
+  conversation_id uuid,
+  message_id uuid,
+  message_body text,
+  message_image text,
+  reason text not null check (reason in ('bullying','inappropriate','hate','spam','unsafe','other','feedback')),
+  details text check (char_length(details) <= 1000),
+  status text not null default 'new',
+  created_at timestamptz not null default now()
+);
+alter table public.reports enable row level security;
+revoke all on public.reports from anon, authenticated;
+
+create or replace function public.report_content(p_user uuid, p_message uuid, p_reason text, p_details text)
+returns void language plpgsql security definer set search_path = public as $$
+declare m public.messages; target uuid := p_user; uname text;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  if (select count(*) from public.reports where reporter = auth.uid() and created_at > now() - interval '1 day') >= 30 then
+    raise exception 'You have sent a lot of reports today. Try again tomorrow.';
+  end if;
+  if p_message is not null then
+    select * into m from public.messages where id = p_message;
+    if not found or not public.is_member(m.conversation_id) then raise exception 'That message is not in your chats'; end if;
+    target := m.sender;
+  end if;
+  if target is null or target = auth.uid() then raise exception 'You cannot report that'; end if;
+  if p_message is null and not (public.is_friend(target) or public.shares_chat(target)
+      or exists (select 1 from public.blocks where blocker = auth.uid() and blocked = target)) then
+    raise exception 'You can only report people you know in Daybloom';
+  end if;
+  select username into uname from public.profiles where id = target;
+  insert into public.reports (reporter, reported_user, reported_username, conversation_id, message_id, message_body, message_image, reason, details)
+  values (auth.uid(), target, uname, m.conversation_id, m.id, m.body, m.image_path, p_reason, left(nullif(btrim(p_details), ''), 1000));
+end $$;
+
+create or replace function public.send_feedback(p_details text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  if char_length(btrim(coalesce(p_details, ''))) < 3 then raise exception 'Write a little more so we know what is going on'; end if;
+  if (select count(*) from public.reports where reporter = auth.uid() and created_at > now() - interval '1 day') >= 30 then
+    raise exception 'You have sent a lot of messages today. Try again tomorrow.';
+  end if;
+  insert into public.reports (reporter, reason, details) values (auth.uid(), 'feedback', left(btrim(p_details), 1000));
+end $$;
+
+-- ---------- Delete my account ----------
+-- Removes the sign-in and, through the links between tables, the profile, events, friends,
+-- chat memberships, sent messages and reactions. Group chats other people are in stay for them.
+create or replace function public.delete_account()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  delete from auth.users where id = auth.uid();
+  delete from public.conversations c where not exists (select 1 from public.conversation_members m where m.conversation_id = c.id);
+end $$;
+
+revoke execute on function public.is_blocked_between(uuid, uuid)               from public, anon;
+revoke execute on function public.block_user(uuid)                             from public, anon;
+revoke execute on function public.unblock_user(uuid)                           from public, anon;
+revoke execute on function public.report_content(uuid, uuid, text, text)       from public, anon;
+revoke execute on function public.send_feedback(text)                          from public, anon;
+revoke execute on function public.delete_account()                             from public, anon;
+grant  execute on function public.is_blocked_between(uuid, uuid)               to authenticated;
+grant  execute on function public.block_user(uuid)                             to authenticated;
+grant  execute on function public.unblock_user(uuid)                           to authenticated;
+grant  execute on function public.report_content(uuid, uuid, text, text)       to authenticated;
+grant  execute on function public.send_feedback(text)                          to authenticated;
+grant  execute on function public.delete_account()                             to authenticated;
