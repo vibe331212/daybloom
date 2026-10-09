@@ -1288,7 +1288,7 @@ document.querySelectorAll('#clockSeg button').forEach(b=>b.onclick=()=>{
 /* ================= Live clock ================= */
 function tickClock(){
   const n=new Date(), h=n.getHours();
-  $('#nowClock').innerHTML=`${(h%12)||12}:${pad(n.getMinutes())}<small>${pad(n.getSeconds())} ${h<12?'AM':'PM'}</small>`;
+  $('#nowClock').innerHTML=`${(h%12)||12}:${pad(n.getMinutes())}<small>${h<12?'AM':'PM'}</small>`;
   $('#nowDate').textContent=`${DAYS[n.getDay()]}, ${MONTHS[n.getMonth()]} ${n.getDate()}`;
 }
 
