@@ -5,3 +5,5 @@
 schedule-it.html
 supabase/.temp/
 supabase/.branches/
+ios/build/
+ios/**/xcuserdata/

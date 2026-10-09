@@ -810,6 +810,10 @@ const store = {
   set(k,v){ try{ localStorage.setItem(window.SI_NS+k,JSON.stringify(v)); }catch{} }
 };
 const $ = s => document.querySelector(s);
+// When Daybloom runs inside the iPhone app, it can ask the phone for things a website can't do
+const Native=(()=>{ const h=window.webkit?.messageHandlers?.daybloom; return { on:!!h, send(m){ try{ h&&h.postMessage(m); }catch{} } }; })();
+const buzz=(style='light')=>Native.send({type:'haptic',style});
+const SITE_URL='https://vibe331212.github.io/daybloom/';
 const pad = n => String(n).padStart(2,'0');
 const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const parseKey = k => { const [y,m,d]=k.split('-').map(Number); return new Date(y,m-1,d); };
@@ -946,7 +950,7 @@ $('#profName').oninput=e=>{ profile.name=e.target.value.slice(0,30); saveProfile
 const RING_MODES=[['ring','Ring like a timer','Your ringtone plays over and over until you tap Stop'],['once','Chime once','Plays your ringtone one time and shows a banner'],['silent','Silent','Just shows a banner, no sound']];
 function renderRingOpts(){
   $('#ringOpts').innerHTML=RING_MODES.map(([v,t,d])=>`<button class="ring-opt ${settings.ring===v?'on':''}" data-v="${v}"><span class="rb"></span><span><b>${t}</b><span>${d}</span></span></button>`).join('');
-  $('#ringOpts').querySelectorAll('.ring-opt').forEach(b=>b.onclick=()=>{ settings.ring=b.dataset.v; store.set('settings',settings); renderRingOpts(); });
+  $('#ringOpts').querySelectorAll('.ring-opt').forEach(b=>b.onclick=()=>{ settings.ring=b.dataset.v; store.set('settings',settings); renderRingOpts(); syncNativeReminders(); });
 }
 
 /* ================= Moving scenes (one per mode) ================= */
@@ -1134,7 +1138,7 @@ applyShade(store.get('shade',0));
 
 /* ================= Events & recurrence ================= */
 let events = store.get('events',[]).map(e=>isUuid(e.id)?e:{...e,id:uuid()});
-const save = () => { store.set('events',events); queueEventPush(); };
+const save = () => { store.set('events',events); queueEventPush(); syncNativeReminders(); };
 const COLORS=['#7c5cff','#3b82f6','#14b8a6','#22c55e','#f59e0b','#ef4444','#ec4899','#94a3b8'];
 const REPEATS=[['none','Never'],['daily','Every day'],['weekly','Every week'],['monthly','Every month'],['yearly','Every year']];
 const REMINDS=[['none','None',null],['0','At time',0],['5','5 min before',5],['15','15 min before',15],['30','30 min before',30],['60','1 hour before',60],['1440','1 day before',1440]];
@@ -1292,7 +1296,7 @@ $('#evForm').onsubmit=e=>{
   if(!data.title||!data.date||!data.time) return;
   if(editing) Object.assign(editing,data); else events.push({id:uuid(),...data});
   save(); selected=parseKey(data.date); viewY=selected.getFullYear(); viewM=selected.getMonth();
-  closeScrim('#evScrim'); renderAll(); toast('Saved',`${data.title} · ${evTime(data)}`);
+  closeScrim('#evScrim'); renderAll(); toast('Saved',`${data.title} · ${evTime(data)}`); buzz('success');
 };
 $('#evDelete').onclick=async()=>{
   if(!editing) return; const ev=editing;
@@ -1386,7 +1390,7 @@ $('#stopPreview').onclick=()=>{stopSound();renderTones();};
 function notify(title,body){ if('Notification' in window && Notification.permission==='granted'){ try{ new Notification(title,{body,icon:'icon-192.png'}); }catch{} } }
 function ringAlarm(title,sub){
   $('#alarmTitle').textContent=title; $('#alarmSub').textContent=sub;
-  openScrim('#alarmScrim'); playTone(toneSel,true); renderTones(); notify(title,sub);
+  openScrim('#alarmScrim'); playTone(toneSel,true); renderTones(); notify(title,sub); buzz('warning');
 }
 $('#alarmStop').onclick=()=>{ stopSound(); closeScrim('#alarmScrim'); renderTones(); };
 
@@ -1406,12 +1410,14 @@ $('#presets').innerHTML=[[1,'1 min'],[3,'3 min'],[5,'5 min'],[10,'10 min'],[15,'
 $('#presets').querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ const m=+c.dataset.m; $('#th').value=Math.floor(m/60); $('#tm').value=m%60; $('#ts').value=0; tTotal=tLeft=m*60000; drawTimer(); });
 $('#tStart').onclick=()=>{
   actx();
-  if(tRunning){ tRunning=false; clearInterval(tTick); tLeft=Math.max(0,tEnd-Date.now()); }
+  if(tRunning){ tRunning=false; clearInterval(tTick); tLeft=Math.max(0,tEnd-Date.now()); Native.send({type:'timer',at:null}); }
   else { if(tLeft<=0) return; tRunning=true; tEnd=Date.now()+tLeft;
-    tTick=setInterval(()=>{ tLeft=Math.max(0,tEnd-Date.now()); if(tLeft<=0){ clearInterval(tTick); tRunning=false; ringAlarm('Timer done',fmtDur(tTotal)+' timer finished'); tLeft=tTotal; } drawTimer(); },200); }
+    Native.send({type:'timer',at:tEnd,body:fmtDur(tTotal)+' timer finished'});
+    tTick=setInterval(()=>{ tLeft=Math.max(0,tEnd-Date.now()); if(tLeft<=0){ clearInterval(tTick); tRunning=false; Native.send({type:'timer',at:null}); ringAlarm('Timer done',fmtDur(tTotal)+' timer finished'); tLeft=tTotal; } drawTimer(); },200); }
+  buzz();
   drawTimer();
 };
-$('#tReset').onclick=()=>{ clearInterval(tTick); tRunning=false; tTotal=tLeft=readInputs(); drawTimer(); };
+$('#tReset').onclick=()=>{ clearInterval(tTick); tRunning=false; tTotal=tLeft=readInputs(); drawTimer(); Native.send({type:'timer',at:null}); };
 
 /* ================= Stopwatch ================= */
 let swStart=0, swAcc=0, swRun=false, swRaf=null, laps=[];
@@ -1605,7 +1611,27 @@ function checkReminders(){
   }
   const cutoff=now-3*86400000; let dirty=false; for(const k in fired) if(fired[k]<cutoff){ delete fired[k]; dirty=true; } if(dirty) store.set('fired',fired);
 }
+// Hand the next month of reminders to the iPhone so they go off even when Daybloom is closed
+function syncNativeReminders(){
+  if(!Native.on) return;
+  const now=Date.now(), items=[];
+  for(const e of events){
+    const r=remindInfo(e); if(!r||r[2]===null) continue;
+    for(let off=0;off<=31;off++){
+      const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+off);
+      if(!occursOn(e,d)) continue;
+      const [h,m]=e.time.split(':').map(Number), at=new Date(d); at.setHours(h,m,0,0);
+      const fire=at.getTime()-r[2]*60000; if(fire<=now) continue;
+      const when=e.allDay?(r[2]===0?'Today':'Tomorrow'):(r[2]===0?'Starting now':`${r[1].replace(' before','')} until it starts`);
+      items.push({id:`${e.id}@${keyOf(d)}`,title:e.title,body:`${when} · ${evTime(e)}${e.notes?' · '+e.notes:''}`,at:fire});
+    }
+  }
+  items.sort((a,b)=>a.at-b.at);
+  Native.send({type:'reminders',items:items.slice(0,60),sound:settings.ring!=='silent'});   // iPhone allows 64 waiting notifications
+}
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncNativeReminders(); });
 function notifUI(){
+  if(Native.on){ $('#notifState').textContent='Reminders and timers use iPhone notifications, so they go off even when Daybloom is closed.'; $('#notifBtn').textContent='Settings'; $('#notifBtn').disabled=false; $('#notifBtn').onclick=()=>Native.send({type:'openSettings'}); return; }
   if(!('Notification' in window)){ $('#notifState').textContent='Not available here. Add the app to your home screen for the best results.'; $('#notifBtn').style.display='none'; return; }
   const p=Notification.permission; $('#notifBtn').textContent=p==='granted'?'Enabled':'Enable'; $('#notifBtn').disabled=p!=='default';
   if(p==='denied') $('#notifState').textContent='Blocked in browser settings';
@@ -1773,7 +1799,7 @@ setInterval(()=>{
   if(!looking) return;
   if(!Cloud.code||codeLeftMs()<300) fetchCode(); else paintCodeTimer(false);
 },1000);
-const shareUrl=()=>`${location.origin}${location.pathname}?add=${Cloud.code?.code||''}`;
+const shareUrl=()=>`${Native.on||location.protocol==='file:'?SITE_URL:location.origin+location.pathname}?add=${Cloud.code?.code||''}`;
 $('#copyCode').onclick=async()=>{
   if(!Cloud.code) return;
   const secs=Math.ceil(codeLeftMs()/1000);
@@ -1783,7 +1809,8 @@ $('#copyCode').onclick=async()=>{
 $('#shareCode').onclick=async()=>{
   if(!Cloud.code) return;
   const text=`Add me on Daybloom! My code is ${fmtCode(Cloud.code.code)}. It only works for ${Math.ceil(codeLeftMs()/1000)} more seconds.`;
-  if(navigator.share){ try{ await navigator.share({title:'Daybloom',text,url:shareUrl()}); }catch{} }
+  if(Native.on) Native.send({type:'share',text,url:shareUrl()});
+  else if(navigator.share){ try{ await navigator.share({title:'Daybloom',text,url:shareUrl()}); }catch{} }
   else { try{ await navigator.clipboard.writeText(text+' '+shareUrl()); toast('Link copied','Send it fast. Your code changes every 45 seconds.'); }catch{} }
 };
 $('#showQr').onclick=()=>{
@@ -1804,8 +1831,8 @@ $('#showQr').onclick=()=>{
   $('#sheet [data-close]').onclick=()=>{ closeScrim('#sheetScrim'); qrObj=null; }; openScrim('#sheetScrim');
 };
 $('#addCode').oninput=e=>{
-  const raw=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
-  e.target.value=raw.length>4?raw.slice(0,4)+'-'+raw.slice(4):raw;
+  const raw=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8), v=raw.length>4?raw.slice(0,4)+'-'+raw.slice(4):raw;
+  if(v!==e.target.value) e.target.value=v;
 };
 $('#addForm').onsubmit=async e=>{
   e.preventDefault(); const code=$('#addCode').value.replace(/[^A-Z0-9]/gi,'');
@@ -1815,7 +1842,7 @@ $('#addForm').onsubmit=async e=>{
 async function addFriend(code){
   if(!Cloud.on){ toast('Not online','Friends needs the app to be online','cloud'); return; }
   const btn=$('#addSubmit'); btn.disabled=true;
-  try{ const f=await Cloud.api.addFriend(code); toast('New friend',`You and ${f.name} are now friends`,'users'); await refreshFriends(); }
+  try{ const f=await Cloud.api.addFriend(code); buzz('success'); toast('New friend',`You and ${f.name} are now friends`,'users'); await refreshFriends(); }
   catch(e){ toast('Could not add friend',e.message,'x'); }
   finally{ btn.disabled=!Cloud.on; }
 }
@@ -2044,7 +2071,7 @@ function openReactionMenu(wrap){
   let left=(wrap.classList.contains('me')?wr.right-cr.left-mw:wr.left-cr.left); left=Math.max(4,Math.min(left,cr.width-mw-4));
   menu.style.top=top+'px'; menu.style.left=left+'px';
   menu.querySelectorAll('.rx-pick').forEach(b=>b.onclick=async e=>{
-    e.stopPropagation(); closeReactionMenu();
+    e.stopPropagation(); closeReactionMenu(); buzz();
     const k=b.dataset.k, next=mineKind===k?null:k, before=Chat.rx[id]?.[Cloud.me.id];
     const slot=(Chat.rx[id]||(Chat.rx[id]={})); if(next) slot[Cloud.me.id]=next; else delete slot[Cloud.me.id];
     renderMsgs();
@@ -2179,6 +2206,7 @@ async function sendChat(){
   try{
     const m=att?await Cloud.api.sendPhoto(conv,att.blob,body):await Cloud.api.send(conv,body);
     if(att) m.localUrl=att.url;          // keep showing the photo already on screen
+    buzz();
     Chat.msgs=Chat.msgs.filter(x=>x!==tmp); if(!Chat.msgs.some(x=>x.id===m.id)) Chat.msgs.push(m);
     const c=Chat.list.find(x=>x.id===conv); if(c){ c.last=m; c.last_message_at=m.created_at; Chat.list.sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at)); }
   }catch(e){
@@ -2229,7 +2257,7 @@ renderChats();
 /* ================= Start up ================= */
 renderAll(); renderTones(); updateToneLabels(); drawTimer(); swUI(); tickClock(); notifUI();
 renderProfileEditor(); renderRingOpts(); renderMyCard(); renderFriends();
-setInterval(tickClock,250); setInterval(checkReminders,10000); checkReminders();
+setInterval(tickClock,250); setInterval(checkReminders,10000); checkReminders(); syncNativeReminders();
 setInterval(()=>{ renderUpNext(); if(Cloud.on&&$('#view-friends').classList.contains('active')) refreshFriends(); },60000);
 
 { const p=new URLSearchParams(location.search).get('add');
@@ -2240,7 +2268,8 @@ document.querySelector(`.tab[data-view="${store.get('view','calendar')}"]`)?.cli
 
 /* ================= Accounts ================= */
 const CFG=window.SCHEDULE_IT_CONFIG||{};
-const CLOUD=!!(CFG.supabaseUrl&&CFG.supabaseKey&&window.supabase);
+const CLOUD_SET_UP=!!(CFG.supabaseUrl&&CFG.supabaseKey);
+const CLOUD=CLOUD_SET_UP&&!!window.supabase;   // the online library didn't load if there's no internet
 // Usernames ride on Supabase's email sign-in using this made-up address; no email is ever sent to it.
 const userEmail=u=>`${u}@users.daybloom.app`;
 const USERNAME_RE=/^[a-z0-9_]{3,20}$/;
@@ -2299,10 +2328,11 @@ function initGate(){
   $('#gateSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
   $('#gEye').onclick=()=>{ const show=$('#gPass').type==='password'; ['#gPass','#gPass2'].forEach(id=>$(id).type=show?'text':'password');
     $('#gEye').innerHTML=icon(show?'lock':'eye'); $('#gEye').setAttribute('aria-label',show?'Hide password':'Show password'); };
-  $('#gUser').oninput=e=>{ e.target.value=e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''); $('#gErr').textContent=''; };
+  // Only rewrite the box when something needs fixing; rewriting on every key press makes iPhone keyboards drop letters
+  $('#gUser').oninput=e=>{ const v=e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''); if(v!==e.target.value) e.target.value=v; $('#gErr').textContent=''; };
   $('#gPass').oninput=$('#gPass2').oninput=()=>$('#gErr').textContent='';
-  $('#gNote').textContent=CLOUD?'Your account works on any phone or computer.':'Accounts are saved on this device for now. They move online once Daybloom is connected.';
-  if(!localStorage.getItem('si.accounts')&&!CLOUD) setMode('up');
+  $('#gNote').textContent=CLOUD?'Your account works on any phone or computer.':CLOUD_SET_UP?"You're offline. Connect to the internet to sign in or sign up.":'Accounts are saved on this device for now. They move online once Daybloom is connected.';
+  if(!localStorage.getItem('si.accounts')&&!CLOUD_SET_UP) setMode('up');
   $('#gateForm').onsubmit=async e=>{
     e.preventDefault();
     const u=$('#gUser').value.trim(), pw=$('#gPass').value, err=t=>{ $('#gErr').textContent=t; };
@@ -2312,6 +2342,7 @@ function initGate(){
     if(!pw) return err('Enter your password');
     const go=$('#gGo'); go.disabled=true; go.textContent=mode==='up'?'Creating account...':'Signing in...';
     try{
+      if(CLOUD_SET_UP&&!CLOUD) throw new Error("You're offline. Connect to the internet and try again.");
       const sess=CLOUD?await cloudAuth(mode,u,pw):await localAuth(mode,u,pw);
       localStorage.setItem('si.session',JSON.stringify(sess));
       claimOldData('si.u.'+sess.id+'.');
@@ -2328,6 +2359,7 @@ else {
   $('#acctMode').textContent=SI_USER.mode==='cloud'?'Online account. Works on any device.':'Saved on this device only.';
   $('#signOut').onclick=async()=>{
     if(!await ask('Sign out?','Your schedule stays saved. Sign back in any time with your username and password.','Sign out')) return;
+    Native.send({type:'reminders',items:[]}); Native.send({type:'timer',at:null});
     if(SI_USER.mode==='cloud'&&Cloud.api){ try{ await Cloud.api.signOut(); }catch{} }
     endSession();
   };
