@@ -354,3 +354,42 @@ create policy "chat photos: members add" on storage.objects for insert to authen
 drop policy if exists "chat photos: members remove" on storage.objects;
 create policy "chat photos: members remove" on storage.objects for delete to authenticated
   using (bucket_id = 'chat-photos' and public.in_chat_folder(name));
+
+-- ---------- Photos in chats ----------
+alter table public.messages add column if not exists image_path text check (char_length(image_path) <= 200);
+alter table public.messages alter column body set default '';
+alter table public.messages drop constraint if exists messages_body_check;
+alter table public.messages add constraint messages_body_check
+  check (char_length(body) <= 1000 and (char_length(btrim(body)) >= 1 or image_path is not null));
+grant insert (conversation_id, body, image_path) on public.messages to authenticated;
+
+drop policy if exists "messages: members post" on public.messages;
+create policy "messages: members post" on public.messages for insert to authenticated
+  with check (sender = auth.uid() and public.can_post(conversation_id)
+              and (image_path is null or split_part(image_path, '/', 1) = conversation_id::text));
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('chat-media', 'chat-media', false, 5242880, array['image/jpeg','image/png','image/webp'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+-- Photos sit in a folder named after the chat: members can see them, and only people allowed to post can add them
+create or replace function public.chat_media_ok(obj_name text, for_write boolean)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare folder text := split_part(obj_name, '/', 1);
+begin
+  if folder !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return false; end if;
+  if for_write then return public.can_post(folder::uuid); end if;
+  return public.is_member(folder::uuid);
+end $$;
+revoke execute on function public.chat_media_ok(text, boolean) from public, anon;
+grant  execute on function public.chat_media_ok(text, boolean) to authenticated;
+
+drop policy if exists "chat media: members see" on storage.objects;
+create policy "chat media: members see" on storage.objects for select to authenticated
+  using (bucket_id = 'chat-media' and public.chat_media_ok(name, false));
+drop policy if exists "chat media: members send" on storage.objects;
+create policy "chat media: members send" on storage.objects for insert to authenticated
+  with check (bucket_id = 'chat-media' and public.chat_media_ok(name, true));
+drop policy if exists "chat media: sender removes" on storage.objects;
+create policy "chat media: sender removes" on storage.objects for delete to authenticated
+  using (bucket_id = 'chat-media' and owner_id = auth.uid()::text);

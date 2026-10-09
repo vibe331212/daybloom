@@ -280,6 +280,7 @@ textarea.inp{resize:vertical;min-height:70px}
 .chat-top{padding-bottom:12px;border-bottom:1px solid var(--border)}
 .chat-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chat-msgs{flex:1;overflow-y:auto;padding:12px 2px;display:flex;flex-direction:column;gap:4px;overscroll-behavior:contain}
+.chat-msgs>*{flex-shrink:0}
 .bub{max-width:78%;padding:9px 13px;border-radius:18px;font-size:15px;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
 .bub.me{align-self:flex-end;background:var(--accent);color:var(--on-accent);border-bottom-right-radius:6px}
 .bub.them{align-self:flex-start;background:var(--c-surface2);border:1px solid var(--border);border-bottom-left-radius:6px}
@@ -298,6 +299,21 @@ button.chat-head:hover{background:var(--c-surface2)}
 .icon-pick{aspect-ratio:1;border-radius:50%;border:2px solid transparent;display:grid;place-items:center;padding:2px}
 .icon-pick.on{border-color:var(--accent)}
 .icon-pick .avatar{width:100%!important;height:100%!important}
+.bub.photo{padding:4px;overflow:hidden}
+.bub.photo .ph{display:block;padding:0;border-radius:14px;overflow:hidden;line-height:0}
+.bub.photo img{display:block;width:min(240px,62vw);max-height:340px;object-fit:cover;border-radius:14px}
+.bub.photo .ph-wait{display:block;width:min(240px,62vw);aspect-ratio:4/3;border-radius:14px;background:var(--c-surface2)}
+.bub.photo .cap{padding:7px 9px 5px;line-height:1.4}
+.chat-attach{display:flex;padding:10px 0 0 52px}
+.chat-attach .att{position:relative;display:block}
+.chat-attach img{width:84px;height:84px;object-fit:cover;border-radius:14px;border:1px solid var(--border);display:block}
+.chat-attach .att-x{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;background:var(--text);color:var(--c-surface);display:grid;place-items:center}
+.chat-attach .att-x svg{width:14px;height:14px;stroke-width:2.4}
+.chat-input .att-btn{width:44px;height:44px;border-radius:50%;flex:none}
+#photoView{position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;padding:20px}
+#photoView.open{display:flex;animation:fade .2s}
+#photoView img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+#photoView .close{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;display:grid;place-items:center}
 .pick-list{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto}
 .pick{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:12px;cursor:pointer}
 .pick:hover{background:var(--c-surface2)}
@@ -686,6 +702,8 @@ html.locked body{overflow:hidden}
     <div class="controls"><button class="btn primary" id="alarmStop" style="padding:13px 34px">Stop</button></div>
   </div>
 </div>
+
+<div id="photoView" role="dialog" aria-modal="true" aria-label="Photo"><img alt="Photo"><button class="close" aria-label="Close photo"><svg class="i" data-icon="x"></svg></button></div>
 
 <div class="toasts" id="toasts"></div>
 
@@ -1584,7 +1602,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       const [convs,members,msgs]=await Promise.all([
         sb.from('conversations').select('id,is_group,name,last_message_at,photo_kind,photo_value,photo_color').in('id',convIds).then(ok),
         sb.from('conversation_members').select('conversation_id,user_id').in('conversation_id',convIds).then(ok),
-        sb.from('messages').select('id,conversation_id,sender,body,created_at').in('conversation_id',convIds).order('created_at',{ascending:false}).limit(300).then(ok)
+        sb.from('messages').select('id,conversation_id,sender,body,image_path,created_at').in('conversation_id',convIds).order('created_at',{ascending:false}).limit(300).then(ok)
       ]);
       const ids=[...new Set(members.map(m=>m.user_id))];
       const byId=Object.fromEntries(ok(await sb.from('profiles').select('id,name,username,shirt,style').in('id',ids)).map(p=>[p.id,p]));
@@ -1596,8 +1614,19 @@ function supabaseApi({supabaseUrl,supabaseKey}){
         last:msgs.find(m=>m.conversation_id===c.id)||null
       })).sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at));
     },
-    async messages(conv){ return ok(await sb.from('messages').select('id,conversation_id,sender,body,created_at').eq('conversation_id',conv).order('created_at',{ascending:false}).limit(150)).reverse(); },
-    async send(conv,body){ return ok(await sb.from('messages').insert({conversation_id:conv,body}).select('id,conversation_id,sender,body,created_at').single()); },
+    async messages(conv){ return ok(await sb.from('messages').select('id,conversation_id,sender,body,image_path,created_at').eq('conversation_id',conv).order('created_at',{ascending:false}).limit(150)).reverse(); },
+    async send(conv,body){ return ok(await sb.from('messages').insert({conversation_id:conv,body}).select('id,conversation_id,sender,body,image_path,created_at').single()); },
+    async sendPhoto(conv,blob,body){
+      const path=`${conv}/${uuid()}.jpg`;
+      ok(await sb.storage.from('chat-media').upload(path,blob,{contentType:'image/jpeg',upsert:false}));
+      try{ return ok(await sb.from('messages').insert({conversation_id:conv,body:body||'',image_path:path}).select('id,conversation_id,sender,body,image_path,created_at').single()); }
+      catch(e){ sb.storage.from('chat-media').remove([path]).catch(()=>{}); throw e; }
+    },
+    async mediaUrls(paths){
+      const {data}=await sb.storage.from('chat-media').createSignedUrls(paths,3600), out={};
+      for(const u of data||[]) if(u.signedUrl) out[u.path]=u.signedUrl;
+      return out;
+    },
     async startChat(friend){ return ok(await sb.rpc('start_chat',{p_friend:friend})); },
     async createGroup(name,ids){ return ok(await sb.rpc('create_group',{p_name:name,p_members:ids})); },
     async leaveChat(conv){ ok(await sb.rpc('leave_chat',{p_conv:conv})); },
@@ -1740,7 +1769,7 @@ $('#refreshFriends').onclick=()=>refreshFriends();
 onView.friends=()=>{ refreshFriends(); refreshChats(); };
 
 /* ================= Private chats ================= */
-const Chat={list:[],open:null,msgs:[],read:store.get('chatRead',{})};
+const Chat={list:[],open:null,msgs:[],read:store.get('chatRead',{}),media:{},mediaWanted:new Set(),attach:null};
 const chatOther=c=>c.members.find(m=>m.id!==Cloud.me?.id);
 const chatName=c=>c.is_group?(c.name||c.members.filter(m=>m.id!==Cloud.me?.id).map(m=>m.name).join(', ')||'Group'):(chatOther(c)?.name||'Chat');
 const isUnread=c=>!!(c.last&&c.last.sender!==Cloud.me?.id&&(!Chat.read[c.id]||c.last.created_at>Chat.read[c.id]));
@@ -1837,7 +1866,7 @@ function renderChats(){
   el.innerHTML=Chat.list.length?Chat.list.map(c=>{
     const l=c.last, who=!l?'':l.sender===Cloud.me.id?'You: ':c.is_group?`${c.members.find(m=>m.id===l.sender)?.name||'Someone'}: `:'';
     return `<button class="friend chat-row${isUnread(c)?' unread':''}" data-id="${c.id}">${chatAvatar(c,48)}
-      <span class="fn"><b>${esc(chatName(c))}</b><span>${l?esc(who+l.body):'No messages yet'}</span></span>
+      <span class="fn"><b>${esc(chatName(c))}</b><span>${l?esc(who+(l.body||'Photo')):'No messages yet'}</span></span>
       <span class="chat-meta">${l?fmtMsgTime(l.created_at):''}${isUnread(c)?'<i class="udot"></i>':''}</span></button>`;
   }).join(''):`<div class="empty" style="padding:22px 10px">${icon('chat')}<div>No chats yet. Tap a friend and press Message, or start a group.</div></div>`;
   el.querySelectorAll('.chat-row').forEach(b=>b.onclick=()=>openChat(b.dataset.id));
@@ -1858,10 +1887,41 @@ function renderMsgs(){
     const t=new Date(m.created_at), mine=m.sender===Cloud.me.id;
     if(!prev||t-new Date(prev.created_at)>15*60000) html+=`<div class="bub-time">${fmtMsgTime(m.created_at)}${fmtMsgTime(m.created_at).includes(':')?'':', '+fmtTime(`${pad(t.getHours())}:${pad(t.getMinutes())}`)}</div>`;
     if(c.is_group&&!mine&&(!prev||prev.sender!==m.sender)) html+=`<div class="bub-who">${esc(c.members.find(x=>x.id===m.sender)?.name||'Someone')}</div>`;
-    html+=`<div class="bub ${mine?'me':'them'}${m.pending?' pending':''}">${esc(m.body)}</div>`;
+    if(m.image_path||m.localUrl){
+      const src=m.localUrl||Chat.media[m.image_path];
+      if(!src&&m.image_path) Chat.mediaWanted.add(m.image_path);
+      html+=`<div class="bub photo ${mine?'me':'them'}${m.pending?' pending':''}">${src?`<button class="ph" data-src="${esc(src)}" aria-label="Open photo"><img src="${esc(src)}" alt="Photo"></button>`:'<span class="ph-wait"></span>'}${m.body?`<div class="cap">${esc(m.body)}</div>`:''}</div>`;
+    } else html+=`<div class="bub ${mine?'me':'them'}${m.pending?' pending':''}">${esc(m.body)}</div>`;
     prev=m;
   }
   el.innerHTML=html; el.scrollTop=el.scrollHeight;
+  el.querySelectorAll('img').forEach(i=>i.onload=()=>{ el.scrollTop=el.scrollHeight; });
+  el.querySelectorAll('.ph').forEach(b=>b.onclick=()=>openPhoto(b.dataset.src));
+  loadMedia();
+}
+// Photos are private, so each one is shown through a short-lived signed link
+async function loadMedia(){
+  const want=[...Chat.mediaWanted].filter(p=>!Chat.media[p]); Chat.mediaWanted.clear();
+  if(!want.length||!Cloud.on) return;
+  try{ Object.assign(Chat.media,await Cloud.api.mediaUrls(want)); renderMsgs(); }catch{}
+}
+function openPhoto(src){ const v=$('#photoView'); v.querySelector('img').src=src; v.classList.add('open'); }
+$('#photoView').onclick=()=>$('#photoView').classList.remove('open');
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('#photoView').classList.remove('open'); });
+// Phone photos are huge, so shrink them (longest side 1280px) before sending
+async function shrinkPhoto(file,max=1280){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error("That file isn't a photo Daybloom can send")); i.src=url; });
+    const k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)), cv=document.createElement('canvas');
+    cv.width=Math.round(img.naturalWidth*k); cv.height=Math.round(img.naturalHeight*k);
+    cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    return await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('Could not read that photo')),'image/jpeg',.82));
+  }finally{ URL.revokeObjectURL(url); }
+}
+function setAttach(a){
+  Chat.attach=a; const box=$('#chatAttach'); if(!box) return;
+  box.hidden=!a; if(a) $('#attImg').src=a.url;
 }
 async function openChat(id){
   const c=Chat.list.find(x=>x.id===id); if(!c) return;
@@ -1872,8 +1932,18 @@ async function openChat(id){
       <span style="min-width:0;display:block"><h2 class="chat-title">${esc(chatName(c))}</h2><span class="sub" style="margin:0;display:block">${c.is_group?`${c.members.length} people · tap for info`:'@'+esc(chatOther(c)?.username||'')}</span></span></${c.is_group?'button':'div'}>
       <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
     <div class="chat-msgs" id="chatMsgs" aria-live="polite"><div class="empty" style="margin:auto">Loading...</div></div>
-    <form class="chat-input" id="chatForm"><textarea class="inp" id="chatText" rows="1" maxlength="1000" placeholder="Message" aria-label="Message"></textarea>
+    <div class="chat-attach" id="chatAttach" hidden><span class="att"><img id="attImg" alt="Photo to send"><button type="button" class="att-x" id="attX" aria-label="Remove photo">${icon('x')}</button></span></div>
+    <form class="chat-input" id="chatForm"><button type="button" class="icon-btn att-btn" id="chatPhotoBtn" aria-label="Add a photo">${icon('camera')}</button><input type="file" id="chatPhotoFile" accept="image/*" hidden>
+      <textarea class="inp" id="chatText" rows="1" maxlength="1000" placeholder="Message" aria-label="Message"></textarea>
       <button class="round go send" aria-label="Send">${icon('send')}</button></form></div>`;
+  setAttach(null);
+  $('#chatPhotoBtn').onclick=()=>$('#chatPhotoFile').click();
+  $('#chatPhotoFile').onchange=async e=>{
+    const f=e.target.files[0]; e.target.value=''; if(!f) return;
+    try{ const blob=await shrinkPhoto(f); setAttach({blob,url:URL.createObjectURL(blob)}); $('#chatText').focus(); }
+    catch(x){ toast('Could not add photo',x.message,'x'); }
+  };
+  $('#attX').onclick=()=>setAttach(null);
   $('#sheet [data-close]').onclick=()=>{ closeScrim('#sheetScrim'); Chat.open=null; };
   if(c.is_group) $('#chatInfoBtn').onclick=()=>openChatInfo(c);
   const ta=$('#chatText');
@@ -1886,29 +1956,30 @@ async function openChat(id){
   renderMsgs(); markRead(c);
 }
 async function sendChat(){
-  const ta=$('#chatText'), body=ta.value.trim(), conv=Chat.open; if(!body||!conv) return;
-  ta.value=''; ta.style.height='';
-  const tmp={id:'tmp-'+uuid(),conversation_id:conv,sender:Cloud.me.id,body,created_at:new Date().toISOString(),pending:true};
+  const ta=$('#chatText'), body=ta.value.trim(), conv=Chat.open, att=Chat.attach; if((!body&&!att)||!conv) return;
+  ta.value=''; ta.style.height=''; setAttach(null);
+  const tmp={id:'tmp-'+uuid(),conversation_id:conv,sender:Cloud.me.id,body,localUrl:att?.url,created_at:new Date().toISOString(),pending:true};
   Chat.msgs.push(tmp); renderMsgs();
   try{
-    const m=await Cloud.api.send(conv,body);
+    const m=att?await Cloud.api.sendPhoto(conv,att.blob,body):await Cloud.api.send(conv,body);
+    if(att) m.localUrl=att.url;          // keep showing the photo already on screen
     Chat.msgs=Chat.msgs.filter(x=>x!==tmp); if(!Chat.msgs.some(x=>x.id===m.id)) Chat.msgs.push(m);
     const c=Chat.list.find(x=>x.id===conv); if(c){ c.last=m; c.last_message_at=m.created_at; Chat.list.sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at)); }
   }catch(e){
-    Chat.msgs=Chat.msgs.filter(x=>x!==tmp); ta.value=body;
+    Chat.msgs=Chat.msgs.filter(x=>x!==tmp); ta.value=body; if(att) setAttach(att);
     toast('Not sent',/row-level security/i.test(e.message)?"You can only message people who are still your friends.":e.message,'x');
   }
   if(Chat.open===conv) renderMsgs(); renderChats();
 }
 function onNewMessage(m){
   const c=Chat.list.find(x=>x.id===m.conversation_id);
-  if(!c){ refreshChats().then(()=>{ if(m.sender!==Cloud.me.id) toast('New chat',m.body.slice(0,80),'chat'); }); return; }
+  if(!c){ refreshChats().then(()=>{ if(m.sender!==Cloud.me.id) toast('New chat',(m.body||'Sent a photo').slice(0,80),'chat'); }); return; }
   c.last=m; c.last_message_at=m.created_at; Chat.list.sort((a,b)=>b.last_message_at.localeCompare(a.last_message_at));
   if(chatIsShowing()&&Chat.open===m.conversation_id){
     if(!Chat.msgs.some(x=>x.id===m.id)&&!(m.sender===Cloud.me.id&&Chat.msgs.some(x=>x.pending&&x.body===m.body))){ Chat.msgs.push(m); renderMsgs(); }
     markRead(c); return;
   }
-  if(m.sender!==Cloud.me.id) toast(c.members.find(x=>x.id===m.sender)?.name||'A friend',m.body.slice(0,80),'chat');
+  if(m.sender!==Cloud.me.id) toast(c.members.find(x=>x.id===m.sender)?.name||'A friend',(m.body||'Sent a photo').slice(0,80),'chat');
   renderChats();
 }
 // Backup in case live updates miss something (for example after the phone was asleep)
