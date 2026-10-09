@@ -160,7 +160,31 @@ textarea.inp{resize:vertical;min-height:70px}
 .now{font-size:clamp(52px,10vw,104px);font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap}
 .now .sec{color:var(--accent)}
 .now small{font-size:.3em;color:var(--muted);font-weight:700;margin-left:10px;letter-spacing:0}
-.analog{width:min(320px,80vw);aspect-ratio:1;display:block;margin:12px auto}
+.analog{width:min(320px,80vw);aspect-ratio:1;display:block;margin:12px auto;user-select:none;-webkit-user-select:none}
+.wc{margin-top:22px;border-top:1px solid var(--border);padding-top:18px}
+.wc-results{display:flex;flex-direction:column;gap:2px}
+.wc-res{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;text-align:left;width:100%}
+.wc-res:hover,.wc-res:focus-visible,.wc-res.first{background:var(--c-surface2)}
+.wc-res b{font-weight:600}
+.wc-res span{color:var(--muted);font-size:13px}
+.wc-res .add{color:var(--accent);font-weight:700;font-size:13px;white-space:nowrap}
+.wc-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:16px 0 6px}
+.wc-mine{padding:7px 12px;font-size:13px}
+.wc-row{display:flex;align-items:center;gap:12px;padding:12px;border-radius:14px;border:1px solid transparent;cursor:pointer;transition:.15s}
+.wc-row:hover{background:var(--c-surface2)}
+.wc-row.on{border-color:var(--accent);background:color-mix(in oklab,var(--accent) 10%,transparent)}
+.wc-row .dn{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--c-surface2);flex:none}
+.wc-row .dn svg{width:19px;height:19px}
+.wc-row .dn.day{color:#e2a72e}
+.wc-row .dn.night{color:#8fa4ff}
+.wc-row .nm{flex:1;min-width:0}
+.wc-row .nm b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wc-row .nm span{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wc-row .tm{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wc-row .tm small{font-size:12px;color:var(--muted);margin-left:3px;font-weight:600}
+.wc-row .x{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:var(--muted);flex:none}
+.wc-row .x:hover{color:#ff5a6a;background:var(--c-surface)}
+.wc-row .x svg{width:15px;height:15px}
 .analog .face{fill:var(--c-surface2);stroke:var(--border);stroke-width:2}
 .analog .tk{stroke:var(--muted);stroke-width:1.4;stroke-linecap:round}
 .analog .tk.big{stroke:var(--text);stroke-width:3.4}
@@ -404,6 +428,12 @@ html.locked body{overflow:hidden}
           <div id="clockPane">
             <svg class="analog" id="analog" viewBox="0 0 200 200" role="img" aria-label="Clock face"></svg>
             <div class="clock-digital" id="clockZone"></div>
+            <div class="wc">
+              <div class="search" style="margin-bottom:6px"><svg class="i" data-icon="globe"></svg><input class="inp" id="wcSearch" placeholder="Search a city or country" autocomplete="off" spellcheck="false" aria-label="Search a city or country"></div>
+              <div class="wc-results" id="wcResults" role="listbox"></div>
+              <div class="wc-head"><h2>World clocks</h2><button class="btn ghost wc-mine" id="wcMine" style="display:none">Back to my time</button></div>
+              <div id="wcList"></div>
+            </div>
           </div>
           <div id="timerPane" style="display:none">
             <div class="ring-wrap">
@@ -643,6 +673,9 @@ const ICONS = {
   share:'<path d="M12 15V4M8 7.5l4-4 4 4"/><path d="M7 11H6.5A2.5 2.5 0 0 0 4 13.5v4A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-4a2.5 2.5 0 0 0-2.5-2.5H17"/>',
   qr:'<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><path d="M13.5 13.5h3v3h-3zM17.5 17.5h2.5V20h-2.5zM17.5 13.5H20M13.5 20h2"/>',
   cloud:'<path d="M7 18.5a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.4 1.6 3.8 3.8 0 0 1-.3 7.4z"/>',
+  globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5c-2.6-2.4-3.9-5.2-3.9-8.5s1.3-6.1 3.9-8.5Z"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
+  moon:'<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5Z"/>',
   userplus:'<circle cx="10" cy="8.5" r="3.2"/><path d="M4 19.5c.6-3.2 3-5 6-5s5.4 1.8 6 5M19 8v6M16 11h6"/>'
 };
 const icon = n => `<svg class="i" viewBox="0 0 24 24">${ICONS[n]}</svg>`;
@@ -1307,7 +1340,9 @@ let lastClockText='';
 function tickClock(){
   const n=new Date(), h=n.getHours(), ampm=h<12?'AM':'PM';
   const text=`${(h%12)||12}:${pad(n.getMinutes())}:${pad(n.getSeconds())} ${ampm}`;
-  if(text===lastClockText) return; lastClockText=text;
+  if(text===lastClockText) return;
+  if(text.slice(0,-6)!==lastClockText.slice(0,-6)&&lastClockText){ if(World.zone) World.shift=zoneShift(World.zone); renderWorld(); }   // new minute
+  lastClockText=text;
   $('#nowClock').innerHTML=`${(h%12)||12}:${pad(n.getMinutes())}<span class="sec">:${pad(n.getSeconds())}</span><small>${ampm}</small>`;
   $('#nowDate').textContent=`${DAYS[n.getDay()]}, ${MONTHS[n.getMonth()]} ${n.getDate()}`;
 }
@@ -1326,13 +1361,104 @@ function tickClock(){
 function moveHands(){
   requestAnimationFrame(moveHands);
   if(!$('#analog').getClientRects().length) return;          // only while the clock face is on screen
-  const n=new Date(), s=n.getSeconds()+n.getMilliseconds()/1000, m=n.getMinutes()+s/60, h=(n.getHours()%12)+m/60;
+  const n=new Date(Date.now()+World.shift*60000), s=n.getSeconds()+n.getMilliseconds()/1000, m=n.getMinutes()+s/60, h=(n.getHours()%12)+m/60;
   $('#hHand').setAttribute('transform',`rotate(${h*30} 100 100)`);
   $('#mHand').setAttribute('transform',`rotate(${m*6} 100 100)`);
   $('#sHand').setAttribute('transform',`rotate(${s*6} 100 100)`);
 }
 requestAnimationFrame(moveHands);
-try{ $('#clockZone').textContent=Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop().replace(/_/g,' ')+' time'; }catch{}
+const MY_ZONE_LABEL=(()=>{ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop().replace(/_/g,' ')+' time'; }catch{ return 'Your time'; } })();
+
+/* ================= World clock ================= */
+const CITY_DATA=`New York|United States|America/New_York;Los Angeles|United States|America/Los_Angeles;Chicago|United States|America/Chicago;Houston|United States|America/Chicago;Dallas|United States|America/Chicago;Denver|United States|America/Denver;Phoenix|United States|America/Phoenix;Seattle|United States|America/Los_Angeles;San Francisco|United States|America/Los_Angeles;Las Vegas|United States|America/Los_Angeles;Miami|United States|America/New_York;Orlando|United States|America/New_York;Atlanta|United States|America/New_York;Boston|United States|America/New_York;Washington DC|United States|America/New_York;Detroit|United States|America/Detroit;Nashville|United States|America/Chicago;Salt Lake City|United States|America/Denver;Anchorage|United States|America/Anchorage;Honolulu|United States|Pacific/Honolulu;Toronto|Canada|America/Toronto;Montreal|Canada|America/Toronto;Vancouver|Canada|America/Vancouver;Calgary|Canada|America/Edmonton;Winnipeg|Canada|America/Winnipeg;Halifax|Canada|America/Halifax;Mexico City|Mexico|America/Mexico_City;Cancun|Mexico|America/Cancun;Guatemala City|Guatemala|America/Guatemala;San Jose|Costa Rica|America/Costa_Rica;Panama City|Panama|America/Panama;Havana|Cuba|America/Havana;San Juan|Puerto Rico|America/Puerto_Rico;Kingston|Jamaica|America/Jamaica;Santo Domingo|Dominican Republic|America/Santo_Domingo;Bogota|Colombia|America/Bogota;Lima|Peru|America/Lima;Quito|Ecuador|America/Guayaquil;Caracas|Venezuela|America/Caracas;Santiago|Chile|America/Santiago;Buenos Aires|Argentina|America/Argentina/Buenos_Aires;Sao Paulo|Brazil|America/Sao_Paulo;Rio de Janeiro|Brazil|America/Sao_Paulo;Brasilia|Brazil|America/Sao_Paulo;Manaus|Brazil|America/Manaus;Montevideo|Uruguay|America/Montevideo;La Paz|Bolivia|America/La_Paz;Asuncion|Paraguay|America/Asuncion;London|United Kingdom|Europe/London;Edinburgh|United Kingdom|Europe/London;Dublin|Ireland|Europe/Dublin;Paris|France|Europe/Paris;Berlin|Germany|Europe/Berlin;Munich|Germany|Europe/Berlin;Madrid|Spain|Europe/Madrid;Barcelona|Spain|Europe/Madrid;Lisbon|Portugal|Europe/Lisbon;Rome|Italy|Europe/Rome;Milan|Italy|Europe/Rome;Amsterdam|Netherlands|Europe/Amsterdam;Brussels|Belgium|Europe/Brussels;Zurich|Switzerland|Europe/Zurich;Vienna|Austria|Europe/Vienna;Prague|Czech Republic|Europe/Prague;Warsaw|Poland|Europe/Warsaw;Copenhagen|Denmark|Europe/Copenhagen;Stockholm|Sweden|Europe/Stockholm;Oslo|Norway|Europe/Oslo;Helsinki|Finland|Europe/Helsinki;Reykjavik|Iceland|Atlantic/Reykjavik;Athens|Greece|Europe/Athens;Istanbul|Turkey|Europe/Istanbul;Budapest|Hungary|Europe/Budapest;Bucharest|Romania|Europe/Bucharest;Kyiv|Ukraine|Europe/Kyiv;Moscow|Russia|Europe/Moscow;Saint Petersburg|Russia|Europe/Moscow;Vladivostok|Russia|Asia/Vladivostok;Cairo|Egypt|Africa/Cairo;Lagos|Nigeria|Africa/Lagos;Nairobi|Kenya|Africa/Nairobi;Johannesburg|South Africa|Africa/Johannesburg;Cape Town|South Africa|Africa/Johannesburg;Casablanca|Morocco|Africa/Casablanca;Accra|Ghana|Africa/Accra;Addis Ababa|Ethiopia|Africa/Addis_Ababa;Dakar|Senegal|Africa/Dakar;Kinshasa|DR Congo|Africa/Kinshasa;Tunis|Tunisia|Africa/Tunis;Algiers|Algeria|Africa/Algiers;Dubai|United Arab Emirates|Asia/Dubai;Abu Dhabi|United Arab Emirates|Asia/Dubai;Riyadh|Saudi Arabia|Asia/Riyadh;Mecca|Saudi Arabia|Asia/Riyadh;Doha|Qatar|Asia/Qatar;Kuwait City|Kuwait|Asia/Kuwait;Jerusalem|Israel|Asia/Jerusalem;Tel Aviv|Israel|Asia/Jerusalem;Amman|Jordan|Asia/Amman;Beirut|Lebanon|Asia/Beirut;Baghdad|Iraq|Asia/Baghdad;Tehran|Iran|Asia/Tehran;Karachi|Pakistan|Asia/Karachi;Lahore|Pakistan|Asia/Karachi;Kabul|Afghanistan|Asia/Kabul;Delhi|India|Asia/Kolkata;Mumbai|India|Asia/Kolkata;Bangalore|India|Asia/Kolkata;Kolkata|India|Asia/Kolkata;Kathmandu|Nepal|Asia/Kathmandu;Dhaka|Bangladesh|Asia/Dhaka;Colombo|Sri Lanka|Asia/Colombo;Yangon|Myanmar|Asia/Yangon;Bangkok|Thailand|Asia/Bangkok;Hanoi|Vietnam|Asia/Ho_Chi_Minh;Ho Chi Minh City|Vietnam|Asia/Ho_Chi_Minh;Jakarta|Indonesia|Asia/Jakarta;Bali|Indonesia|Asia/Makassar;Kuala Lumpur|Malaysia|Asia/Kuala_Lumpur;Singapore|Singapore|Asia/Singapore;Manila|Philippines|Asia/Manila;Hong Kong|China|Asia/Hong_Kong;Beijing|China|Asia/Shanghai;Shanghai|China|Asia/Shanghai;Taipei|Taiwan|Asia/Taipei;Seoul|South Korea|Asia/Seoul;Tokyo|Japan|Asia/Tokyo;Osaka|Japan|Asia/Tokyo;Ulaanbaatar|Mongolia|Asia/Ulaanbaatar;Almaty|Kazakhstan|Asia/Almaty;Tashkent|Uzbekistan|Asia/Tashkent;Sydney|Australia|Australia/Sydney;Melbourne|Australia|Australia/Melbourne;Brisbane|Australia|Australia/Brisbane;Perth|Australia|Australia/Perth;Adelaide|Australia|Australia/Adelaide;Darwin|Australia|Australia/Darwin;Auckland|New Zealand|Pacific/Auckland;Wellington|New Zealand|Pacific/Auckland;Fiji|Fiji|Pacific/Fiji;Guam|Guam|Pacific/Guam`;
+const validZone=z=>{ try{ new Intl.DateTimeFormat('en-US',{timeZone:z}); return true; }catch{ return false; } };
+const fold=t=>t.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const PLACES=(()=>{
+  const list=CITY_DATA.split(';').map(r=>{ const [city,country,zone]=r.split('|'); return {city,country,zone}; })
+    .map(p=>p.zone==='Europe/Kyiv'&&!validZone(p.zone)?{...p,zone:'Europe/Kiev'}:p).filter(p=>validZone(p.zone));
+  // Every other time zone this device knows about, named after its main city
+  const seen=new Set(list.map(p=>fold(p.city)));
+  let all=[]; try{ all=Intl.supportedValuesOf('timeZone'); }catch{}
+  for(const z of all){
+    const parts=z.split('/'); if(parts.length<2||/^(Etc|SystemV|US|Canada|Brazil|Chile|Mexico)$/.test(parts[0])) continue;
+    const city=parts[parts.length-1].replace(/_/g,' '); if(seen.has(fold(city))) continue;
+    seen.add(fold(city)); list.push({city,country:parts[0].replace(/_/g,' '),zone:z});
+  }
+  return list.map(p=>({...p,key:fold(p.city),ckey:fold(p.country)}));
+})();
+function zoneNowParts(zone,d=new Date()){
+  const o={}; for(const p of new Intl.DateTimeFormat('en-US',{timeZone:zone,hourCycle:'h23',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric'}).formatToParts(d)) o[p.type]=+p.value;
+  return o;
+}
+// Minutes between that place's clock and this device's clock
+function zoneShift(zone,d=new Date()){
+  const o=zoneNowParts(zone,d), there=Date.UTC(o.year,o.month-1,o.day,o.hour%24,o.minute);
+  const here=Date.UTC(d.getFullYear(),d.getMonth(),d.getDate(),d.getHours(),d.getMinutes());
+  return Math.round((there-here)/60000);
+}
+function shiftText(min){
+  if(min===0) return 'Same time';
+  const a=Math.abs(min), h=Math.floor(a/60), m=a%60;
+  return `${min>0?'+':'-'}${h?`${h} hr${h>1?'s':''}`:''}${h&&m?' ':''}${m?`${m} min`:''}`;
+}
+const World={list:store.get('worldClocks',[]),zone:null,city:'',shift:0};
+function saveWorld(){ store.set('worldClocks',World.list); }
+function pickCity(p){
+  if(World.zone===p?.zone&&World.city===p?.city) p=null;     // tap again to go back to your own time
+  World.zone=p?.zone||null; World.city=p?.city||''; World.shift=p?zoneShift(p.zone):0;
+  $('#clockZone').textContent=p?`${p.city} time`:MY_ZONE_LABEL;
+  $('#wcMine').style.display=p?'':'none';
+  renderWorld();
+}
+function renderWorld(){
+  if(!World.list.length){ $('#wcList').innerHTML=`<div class="empty" style="padding:20px 10px">${icon('globe')}<div>Search for a city above to see its time here.</div></div>`; return; }
+  const now=new Date();
+  $('#wcList').innerHTML=World.list.map((p,i)=>{
+    const shift=zoneShift(p.zone,now), t=new Date(now.getTime()+shift*60000), h=t.getHours();
+    const dayDiff=Math.round((new Date(t.getFullYear(),t.getMonth(),t.getDate())-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);
+    const day=dayDiff===0?'Today':dayDiff===1?'Tomorrow':dayDiff===-1?'Yesterday':'';
+    const isDay=h>=6&&h<18, on=World.zone===p.zone&&World.city===p.city;
+    return `<div class="wc-row${on?' on':''}" data-i="${i}" role="button" tabindex="0" aria-pressed="${on}" aria-label="Show ${esc(p.city)} on the clock">
+      <span class="dn ${isDay?'day':'night'}">${icon(isDay?'sun':'moon')}</span>
+      <span class="nm"><b>${esc(p.city)}</b><span>${day} · ${shiftText(shift)}</span></span>
+      <span class="tm">${(h%12)||12}:${pad(t.getMinutes())}<small>${h<12?'AM':'PM'}</small></span>
+      <button class="x" data-x="${i}" aria-label="Remove ${esc(p.city)}">${icon('x')}</button></div>`;
+  }).join('');
+  $('#wcList').querySelectorAll('.wc-row').forEach(r=>{
+    const go=()=>pickCity(World.list[+r.dataset.i]);
+    r.onclick=e=>{ if(!e.target.closest('.x')) go(); };
+    r.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } };
+  });
+  $('#wcList').querySelectorAll('.x').forEach(b=>b.onclick=e=>{
+    e.stopPropagation(); const p=World.list[+b.dataset.x];
+    if(World.zone===p.zone&&World.city===p.city) pickCity(null);
+    World.list.splice(+b.dataset.x,1); saveWorld(); renderWorld();
+  });
+}
+function searchPlaces(q){
+  q=fold(q.trim()); if(!q) return [];
+  const score=p=>p.key.startsWith(q)?0:p.key.includes(q)?1:p.ckey.startsWith(q)?2:p.ckey.includes(q)?3:9;
+  return PLACES.map(p=>[score(p),p]).filter(([sc])=>sc<9).sort((a,b)=>a[0]-b[0]||a[1].city.localeCompare(b[1].city)).slice(0,8).map(([,p])=>p);
+}
+function addPlace(p){
+  if(!World.list.some(x=>x.zone===p.zone&&x.city===p.city)){ World.list.unshift({city:p.city,country:p.country,zone:p.zone}); World.list=World.list.slice(0,20); saveWorld(); }
+  $('#wcSearch').value=''; $('#wcResults').innerHTML=''; renderWorld();
+  toast('Added',`${p.city} is in your world clocks`,'globe');
+}
+$('#wcSearch').oninput=e=>{
+  const res=searchPlaces(e.target.value);
+  $('#wcResults').innerHTML=e.target.value.trim()&&!res.length?`<div class="hint" style="padding:8px 12px">No places match that</div>`
+    :res.map((p,i)=>{ const added=World.list.some(x=>x.zone===p.zone&&x.city===p.city), t=new Date(Date.now()+zoneShift(p.zone)*60000), h=t.getHours();
+      return `<button class="wc-res${i===0?' first':''}" data-i="${i}" role="option"><span><b>${esc(p.city)}</b> <span>${esc(p.country)} · ${(h%12)||12}:${pad(t.getMinutes())} ${h<12?'AM':'PM'}</span></span><span class="add">${added?'Added':'Add'}</span></button>`; }).join('');
+  $('#wcResults').querySelectorAll('.wc-res').forEach(b=>b.onclick=()=>addPlace(res[+b.dataset.i]));
+};
+$('#wcSearch').onkeydown=e=>{
+  if(e.key==='Enter'){ const r=searchPlaces(e.target.value); if(r[0]) addPlace(r[0]); }
+  if(e.key==='Escape'){ e.target.value=''; $('#wcResults').innerHTML=''; }
+};
+$('#wcMine').onclick=()=>pickCity(null);
+$('#clockZone').textContent=MY_ZONE_LABEL;
+renderWorld();
 
 /* ================= Reminder engine ================= */
 let fired=store.get('fired',{});
