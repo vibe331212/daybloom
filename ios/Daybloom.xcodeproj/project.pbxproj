@@ -146,7 +146,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Copies the Daybloom web app (the same files as the website) into the iPhone app.\nset -e\nWEB=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Web\"\nrm -rf \"$WEB\"\nmkdir -p \"$WEB\"\ncd \"${SRCROOT}/..\"\nfor f in index.html config.js group-icons.js terms.html icon.svg icon-180.png icon-192.png icon-512.png manifest.webmanifest; do\n  cp \"$f\" \"$WEB/\"\ndone\n";
+			shellScript = "# Copies the Daybloom web app (the same files as the website) into the iPhone app.\nset -e\nWEB=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Web\"\nrm -rf \"$WEB\"\nmkdir -p \"$WEB\"\ncd \"${SRCROOT}/..\"\nfor f in index.html config.js group-icons.js terms.html privacy.html icon.svg icon-180.png icon-192.png icon-512.png manifest.webmanifest; do\n  cp \"$f\" \"$WEB/\"\ndone\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

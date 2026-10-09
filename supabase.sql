@@ -471,7 +471,7 @@ alter table public.conversations add constraint conversations_created_by_fkey
 create or replace function public.clean_text(t text)
 returns text language sql immutable as $$
   select case when t is null then null else regexp_replace(t,
-    '\m\w*(fuck|shit|bitch|cunt|whore|slut|faggot|nigger|nigga|retard)\w*\M|\m(ass|asshole|asshat|bastard|dick|dickhead|pussy|fag|cock|twat|wanker)\M',
+    '\m\w*(fuck|shit|bitch|cunt|whore|slut|faggot|nigger|nigga|retard|damn|dammit)\w*\M|\m(ass|asshole|asshat|bastard|dick|dickhead|pussy|fag|cock|twat|wanker)\M',
     '****', 'gi') end;
 $$;
 create or replace function public.clean_message() returns trigger language plpgsql as $$

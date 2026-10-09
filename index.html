@@ -674,6 +674,7 @@ html.locked body{overflow:hidden}
         <div class="card">
           <h2>Help and safety</h2>
           <div class="set-row"><div><div class="k">Community rules</div><div class="v">How everyone stays safe on Daybloom</div></div><a class="btn ghost" id="rulesLink" target="_blank" rel="noopener">Read</a></div>
+          <div class="set-row"><div><div class="k">Privacy policy</div><div class="v">What Daybloom stores and who can see it</div></div><a class="btn ghost" id="privacyLink" target="_blank" rel="noopener">Read</a></div>
           <div class="set-row"><div><div class="k">Blocked people</div><div class="v" id="blockedSummary">No one</div></div><button class="btn ghost" id="blockedBtn">Manage</button></div>
           <div class="set-row"><div><div class="k">Contact support</div><div class="v">Send a problem or question to the people who run Daybloom</div></div><button class="btn ghost" id="supportBtn">Write</button></div>
         </div>
@@ -698,7 +699,7 @@ html.locked body{overflow:hidden}
     <div class="field"><label for="gPass">Password</label><div class="pw"><input class="inp" id="gPass" name="password" type="password" autocomplete="current-password" maxlength="72"><button type="button" class="pw-eye" id="gEye" aria-label="Show password"><svg class="i" data-icon="eye"></svg></button></div></div>
     <div class="field" id="gConfirmWrap" style="display:none"><label for="gPass2">Confirm password</label><input class="inp" id="gPass2" type="password" autocomplete="new-password" maxlength="72"></div>
     <div class="hint" id="gRules" style="display:none;text-align:left">Username: 3 to 20 lowercase letters, numbers or _. Password: at least 8 characters.</div>
-    <label class="agree" id="gAgreeWrap" style="display:none"><input type="checkbox" id="gAgree"><span>I agree to the <a id="gRulesLink" target="_blank" rel="noopener">Community Rules and Terms</a>. I'm at least 13 and I'll be kind.</span></label>
+    <label class="agree" id="gAgreeWrap" style="display:none"><input type="checkbox" id="gAgree"><span>I agree to the <a id="gRulesLink" target="_blank" rel="noopener">Community Rules and Terms</a> and have read the <a id="gPrivacyLink" target="_blank" rel="noopener">Privacy Policy</a>. I'm at least 13 and I'll be kind.</span></label>
     <div class="gate-err" id="gErr" role="alert"></div>
     <button class="btn primary gate-go" id="gGo" type="submit">Sign in</button>
     <div class="gate-note" id="gNote"></div>
@@ -845,8 +846,8 @@ const $ = s => document.querySelector(s);
 const Native=(()=>{ const h=window.webkit?.messageHandlers?.daybloom; return { on:!!h, send(m){ try{ h&&h.postMessage(m); }catch{} } }; })();
 const buzz=(style='light')=>Native.send({type:'haptic',style});
 const SITE_URL='https://vibe331212.github.io/daybloom/';
-const RULES_URL=SITE_URL+'terms.html';
-const BAD_WORDS=/\b\w*(fuck|shit|bitch|cunt|whore|slut|faggot|nigger|nigga|retard)\w*\b|\b(ass|asshole|asshat|bastard|dick|dickhead|pussy|fag|cock|twat|wanker)\b/gi;
+const RULES_URL=SITE_URL+'terms.html', PRIVACY_URL=SITE_URL+'privacy.html';
+const BAD_WORDS=/\b\w*(fuck|shit|bitch|cunt|whore|slut|faggot|nigger|nigga|retard|damn|dammit)\w*\b|\b(ass|asshole|asshat|bastard|dick|dickhead|pussy|fag|cock|twat|wanker)\b/gi;
 const clean=t=>t==null?t:String(t).replace(BAD_WORDS,'****');
 const pad = n => String(n).padStart(2,'0');
 const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -2396,7 +2397,7 @@ $('#supportBtn').onclick=()=>{
     catch(e){ $('#supErr').textContent=e.message; }
   };
 };
-$('#rulesLink').href=RULES_URL; $('#gRulesLink').href=RULES_URL;
+$('#rulesLink').href=RULES_URL; $('#gRulesLink').href=RULES_URL; $('#privacyLink').href=PRIVACY_URL; $('#gPrivacyLink').href=PRIVACY_URL;
 // Everyone agrees to the community rules once (bump RULES_VERSION if the rules change)
 const RULES_VERSION=1;
 function askRulesIfNeeded(){
