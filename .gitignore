@@ -1,0 +1,5 @@
+# Local tool settings
+.claude/
+.DS_Store
+# First prototype, kept locally only
+schedule-it.html

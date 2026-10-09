@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b1550"/>
+      <stop offset=".55" stop-color="#c2457a"/>
+      <stop offset="1" stop-color="#f6a35b"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="50" cy="58" r="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe2a0" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#ffe2a0" stop-opacity="0"/>
+    </radialGradient>
+    <path id="ray" d="M50 38C46.4 31 46.4 23.5 50 17C53.6 23.5 53.6 31 50 38Z"/>
+  </defs>
+  <rect width="100" height="100" fill="url(#sky)"/>
+  <circle cx="50" cy="58" r="34" fill="url(#halo)"/>
+  <g fill="#ffc46a" fill-opacity=".85">
+    <use href="#ray" transform="rotate(-122 50 58)"/>
+    <use href="#ray" transform="rotate(-99 50 58)"/>
+    <use href="#ray" transform="rotate(99 50 58)"/>
+    <use href="#ray" transform="rotate(122 50 58)"/>
+  </g>
+  <g fill="#ffd27a" fill-opacity=".88">
+    <use href="#ray" transform="rotate(-75 50 58)"/>
+    <use href="#ray" transform="rotate(-50 50 58)"/>
+    <use href="#ray" transform="rotate(-25 50 58)"/>
+    <use href="#ray" transform="rotate(25 50 58)"/>
+    <use href="#ray" transform="rotate(50 50 58)"/>
+    <use href="#ray" transform="rotate(75 50 58)"/>
+  </g>
+  <use href="#ray" fill="#ffe9a8"/>
+  <circle cx="50" cy="58" r="18" fill="#fff4dc"/>
+  <circle cx="50" cy="58" r="18" fill="none" stroke="#ffd27a" stroke-width="2"/>
+  <g stroke="#d98a7a" stroke-width="2" stroke-linecap="round">
+    <path d="M50 43.5V46.5M50 69.5V72.5M35.5 58H38.5M61.5 58H64.5"/>
+  </g>
+  <path d="M50 58V47.5M50 58L57.5 62" stroke="#2b1550" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="50" cy="58" r="2.2" fill="#2b1550"/>
+  <path d="M0 80Q25 73 50 80T100 80V100H0Z" fill="#2a1240"/>
+</svg>
