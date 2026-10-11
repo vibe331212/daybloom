@@ -2355,7 +2355,45 @@ setInterval(()=>{ renderUpNext(); if(Cloud.on&&$('#view-friends').classList.cont
   if(p){ pendingAdd=p.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8); history.replaceState(null,'',location.pathname); store.set('view','friends');
     try{ sessionStorage.setItem('si.pendingAdd',pendingAdd); }catch{} }
   else { try{ pendingAdd=sessionStorage.getItem('si.pendingAdd'); }catch{} } }
+
+/* ================= Add events sent from other apps (like PetPost) ================= */
+// Link: ?import=<base64url JSON { from, events:[{ title, date, time, allDay, repeat, remind, color, notes, private }] }>
+// The events wait until someone is signed in, then Daybloom asks before adding them.
+{ const raw=new URLSearchParams(location.search).get('import');
+  if(raw){ history.replaceState(null,'',location.pathname); try{ sessionStorage.setItem('si.pendingImport',raw); }catch{} } }
+async function offerImport(){
+  let raw=null; try{ raw=sessionStorage.getItem('si.pendingImport'); }catch{}
+  if(!raw||!window.SI_USER) return;
+  try{ sessionStorage.removeItem('si.pendingImport'); }catch{}
+  let data;
+  try{ data=JSON.parse(decodeURIComponent(escape(atob(raw.replace(/-/g,'+').replace(/_/g,'/'))))); }
+  catch{ toast('Could not add events','That link is broken','x'); return; }
+  const repeats=REPEATS.map(r=>r[0]);
+  const list=(Array.isArray(data.events)?data.events:[]).slice(0,60).map(e=>({
+    title:String(e.title||'').trim().slice(0,80), date:String(e.date||''), allDay:!!e.allDay,
+    time:/^\d\d:\d\d$/.test(e.time)?e.time:ALLDAY_TIME, notes:String(e.notes||'').trim().slice(0,500),
+    repeat:repeats.includes(e.repeat)?e.repeat:'none', remind:REMINDS.some(r=>r[0]===String(e.remind))?String(e.remind):'0',
+    color:COLORS.includes(e.color)?e.color:COLORS[0], private:e.private!==false
+  })).filter(e=>e.title&&/^\d{4}-\d\d-\d\d$/.test(e.date));
+  // Sending the same link twice should not double up events
+  const fresh=list.filter(e=>!events.some(x=>x.title===e.title&&x.date===e.date&&x.time===e.time&&x.repeat===e.repeat));
+  const from=String(data.from||'another app').slice(0,30);
+  if(!fresh.length){ toast('Already added',`Everything from ${from} is already in Daybloom`); return; }
+  const when=e=>e.repeat==='daily'?repeatText(e):`${e.repeat!=='none'?repeatText(e):parseKey(e.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})} at ${fmtTime(e.time)}`;
+  const lines=fresh.slice(0,6).map(e=>`${e.title}: ${when(e)}`);
+  if(fresh.length>6) lines.push(`and ${fresh.length-6} more`);
+  $('#askBody').style.whiteSpace='pre-line';
+  const yes=await ask(`Add ${fresh.length} event${fresh.length===1?'':'s'} from ${from}?`,lines.join('\n'),'Add to Daybloom');
+  $('#askBody').style.whiteSpace='';
+  if(!yes) return;
+  const stamp=Date.now();
+  fresh.forEach(e=>events.push({id:uuid(),...e,updated:stamp,synced:false}));
+  save(); renderAll();
+  document.querySelector('.tab[data-view="calendar"]')?.click();
+  toast('Added to Daybloom',`${fresh.length} event${fresh.length===1?'':'s'} from ${from}, with reminders`); buzz('success');
+}
 document.querySelector(`.tab[data-view="${store.get('view','calendar')}"]`)?.click();
+offerImport();
 
 /* ================= Safety: block, report, rules, support ================= */
 async function refreshBlocks(){
