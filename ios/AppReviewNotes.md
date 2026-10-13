@@ -13,7 +13,7 @@ Sign in on the first screen with the demo account above (Sign in tab). It alread
 - A one-on-one chat with Maya and a group chat called "Study group".
 
 Things to try:
-- Calendar: tap New event, turn on All day or set a reminder. Reminders and timers use local notifications, so they go off even when the app is closed. The app asks for notification permission the first time you set one.
+- Calendar: tap New event, turn on All day or set a reminder. When the app is closed, reminders and timers appear as silent local notifications (a banner, no sound). While the app is open, it plays the ringtone chosen in Clock. The app asks for notification permission the first time you set one.
 - Clock: world clock, timer, stopwatch, and 300 built-in ringtones.
 - Friends → Chats: send a message or photo; double-tap or press and hold a message to react, copy, or report it.
 

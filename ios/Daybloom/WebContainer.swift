@@ -80,7 +80,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 }
                 NSLog("DAYBLOOM_DEBUG result: %@", text)
                 UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
-                    let list = requests.map { "\($0.identifier) | \($0.content.title) | \($0.content.body)" }.joined(separator: " ;; ")
+                    let list = requests.map { "\($0.identifier) | \($0.content.title) | \($0.content.body) | \($0.content.sound == nil ? "silent" : "SOUND")" }.joined(separator: " ;; ")
                     NSLog("DAYBLOOM_DEBUG pending(%d): %@", requests.count, list)
                 }
             }
@@ -99,9 +99,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             share(text: body["text"] as? String ?? "", url: (body["url"] as? String).flatMap(URL.init(string:)))
         case "reminders":
             let items = body["items"] as? [[String: Any]] ?? []
-            let sound = body["sound"] as? Bool ?? true
             let ask = body["ask"] as? Bool ?? false
-            Task { await Reminders.schedule(items, sound: sound, ask: ask) }
+            Task { await Reminders.schedule(items, ask: ask) }
         case "timer":
             let at = (body["at"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
             Task { await Reminders.scheduleTimer(at: at, body: body["body"] as? String ?? "Your timer finished") }

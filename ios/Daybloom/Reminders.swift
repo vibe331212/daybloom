@@ -1,7 +1,8 @@
 import Foundation
 import UserNotifications
 
-/// Turns Daybloom reminders and timers into iPhone notifications, so they go off even when the app is closed.
+/// Turns Daybloom reminders and timers into iPhone notifications, so they show up even when the app is closed.
+/// They are always silent: a banner with no sound. Inside the app, Daybloom plays its own ringtone instead.
 enum Reminders {
     private static let center = UNUserNotificationCenter.current()
     private static let reminderPrefix = "reminder:"
@@ -13,7 +14,7 @@ enum Reminders {
         switch settings.authorizationStatus {
         case .notDetermined:
             guard ask else { return false }
-            return (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+            return (try? await center.requestAuthorization(options: [.alert])) ?? false   // banners only, never sounds
         case .authorized, .provisional, .ephemeral:
             return true
         default:
@@ -22,7 +23,7 @@ enum Reminders {
     }
 
     /// Replaces every scheduled reminder with this list. Each item is {id, title, body, at} where `at` is milliseconds since 1970.
-    static func schedule(_ items: [[String: Any]], sound: Bool, ask: Bool) async {
+    static func schedule(_ items: [[String: Any]], ask: Bool) async {
         let pending = await center.pendingNotificationRequests()
         center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(reminderPrefix) })
         guard !items.isEmpty, await allowed(ask: ask) else { return }
@@ -37,7 +38,6 @@ enum Reminders {
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = item["body"] as? String ?? ""
-            if sound { content.sound = .default }
             try? await center.add(UNNotificationRequest(identifier: reminderPrefix + id, content: content, trigger: trigger(for: date)))
         }
     }
@@ -49,7 +49,6 @@ enum Reminders {
         let content = UNMutableNotificationContent()
         content.title = "Timer done"
         content.body = body
-        content.sound = .default
         try? await center.add(UNNotificationRequest(identifier: timerID, content: content, trigger: trigger(for: date)))
     }
 

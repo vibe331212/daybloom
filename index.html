@@ -654,7 +654,7 @@ html.locked body{overflow:hidden}
           <div class="sub">What happens when a reminder goes off</div>
           <div class="ring-opts" id="ringOpts"></div>
           <div class="set-row" style="margin-top:8px"><div><div class="k">Sound</div><div class="v" id="remTone"></div></div><button class="btn ghost" id="testRem">Test</button></div>
-          <div class="set-row"><div><div class="k">System notifications</div><div class="v" id="notifState">Show reminders even in another tab</div></div><button class="btn ghost" id="notifBtn">Enable</button></div>
+          <div class="set-row"><div><div class="k">System notifications</div><div class="v" id="notifState">Quiet notifications when Daybloom is in another tab</div></div><button class="btn ghost" id="notifBtn">Enable</button></div>
         </div>
       </div>
       <h3>Modes</h3>
@@ -986,7 +986,7 @@ function renderProfileEditor(){
 }
 $('#profName').oninput=e=>{ profile.name=e.target.value.slice(0,30); saveProfile(); renderProfileEditor(); };
 
-const RING_MODES=[['ring','Ring like a timer','Your ringtone plays over and over until you tap Stop'],['once','Chime once','Plays your ringtone one time and shows a banner'],['silent','Silent','Just shows a banner, no sound']];
+const RING_MODES=[['ring','Ring like a timer','While Daybloom is open, your ringtone plays until you tap Stop'],['once','Chime once','While Daybloom is open, your ringtone plays one time'],['silent','Silent','Just shows a banner, no sound']];
 function renderRingOpts(){
   $('#ringOpts').innerHTML=RING_MODES.map(([v,t,d])=>`<button class="ring-opt ${settings.ring===v?'on':''}" data-v="${v}"><span class="rb"></span><span><b>${t}</b><span>${d}</span></span></button>`).join('');
   $('#ringOpts').querySelectorAll('.ring-opt').forEach(b=>b.onclick=()=>{ settings.ring=b.dataset.v; store.set('settings',settings); renderRingOpts(); syncNativeReminders(); });
@@ -1428,7 +1428,8 @@ $('#toneSearch').oninput=renderTones;
 $('#stopPreview').onclick=()=>{stopSound();renderTones();};
 
 /* ================= Alarm overlay ================= */
-function notify(title,body){ if('Notification' in window && Notification.permission==='granted'){ try{ new Notification(title,{body,icon:'icon-192.png'}); }catch{} } }
+// System notifications only appear when Daybloom isn't on screen, and they're silent (Daybloom rings on its own when it's open)
+function notify(title,body){ if(document.hidden&&'Notification' in window && Notification.permission==='granted'){ try{ new Notification(title,{body,icon:'icon-192.png',silent:true}); }catch{} } }
 function ringAlarm(title,sub){
   $('#alarmTitle').textContent=title; $('#alarmSub').textContent=sub;
   openScrim('#alarmScrim'); playTone(toneSel,true); renderTones(); notify(title,sub); buzz('warning');
@@ -1668,11 +1669,11 @@ function syncNativeReminders(ask=false){   // ask: OK to show the permission pro
     }
   }
   items.sort((a,b)=>a.at-b.at);
-  Native.send({type:'reminders',items:items.slice(0,60),sound:settings.ring!=='silent',ask});   // iPhone allows 64 waiting notifications
+  Native.send({type:'reminders',items:items.slice(0,60),ask});   // iPhone allows 64 waiting notifications
 }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncNativeReminders(); });
 function notifUI(){
-  if(Native.on){ $('#notifState').textContent='Reminders and timers use iPhone notifications, so they go off even when Daybloom is closed.'; $('#notifBtn').textContent='Settings'; $('#notifBtn').disabled=false; $('#notifBtn').onclick=()=>Native.send({type:'openSettings'}); return; }
+  if(Native.on){ $('#notifState').textContent='When Daybloom is closed, reminders and timers show up as quiet notifications with no sound.'; $('#notifBtn').textContent='Settings'; $('#notifBtn').disabled=false; $('#notifBtn').onclick=()=>Native.send({type:'openSettings'}); return; }
   if(!('Notification' in window)){ $('#notifState').textContent='Not available here. Add the app to your home screen for the best results.'; $('#notifBtn').style.display='none'; return; }
   const p=Notification.permission; $('#notifBtn').textContent=p==='granted'?'Enabled':'Enable'; $('#notifBtn').disabled=p!=='default';
   if(p==='denied') $('#notifState').textContent='Blocked in browser settings';

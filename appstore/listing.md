@@ -33,7 +33,7 @@ Under **iPhone 6.9" Display**, drag in `screenshots/01-calendar.png` through `sc
 
 ### Promotional text (170 max)
 ```
-Plan your days, see your friends' schedules, and chat privately. Reminders ring even when the app is closed, with 300 original ringtones and 11 relaxing scenes.
+Plan your days, see your friends' schedules, and chat privately. Quiet reminders even when the app is closed, plus 300 original ringtones and 11 relaxing scenes.
 ```
 
 ### Description (4000 max)
@@ -44,7 +44,7 @@ PLAN YOUR DAYS
 • A clean monthly calendar with an Up Next list
 • Events that repeat every day, week, month, or year
 • All-day events for trips, birthdays, and big days
-• Reminders that ring even when Daybloom is closed
+• Quiet reminder notifications, even when Daybloom is closed
 • Mark any event "Only me" to keep it private
 
 FRIENDS, SCHEDULES, AND CHAT
@@ -58,7 +58,7 @@ CLOCK
 • A big clock with a sweeping second hand
 • World clock: search any city and see its time
 • Timer and a stopwatch that remembers what you were timing
-• 300 original ringtones
+• 300 original ringtones for when Daybloom is open
 
 MAKE IT YOURS
 • 11 modes, each with its own relaxing moving scene: Royal gold dust, Nature with swaying trees, Ocean waves, Aurora northern lights, Midnight shooting stars, and more
