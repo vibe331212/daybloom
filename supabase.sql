@@ -615,3 +615,38 @@ grant  execute on function public.unblock_user(uuid)                           t
 grant  execute on function public.report_content(uuid, uuid, text, text)       to authenticated;
 grant  execute on function public.send_feedback(text)                          to authenticated;
 grant  execute on function public.delete_account()                             to authenticated;
+
+-- ---------- Profile photos ----------
+-- A profile can use a photo instead of an animal. The file lives in a private folder named after the person,
+-- and only they, their friends, and people they share a chat with can see it.
+alter table public.profiles add column if not exists photo text;
+do $$ begin
+  alter table public.profiles add constraint profiles_photo_own
+    check (photo is null or (split_part(photo, '/', 1) = id::text and char_length(photo) <= 120));
+exception when duplicate_object then null; end $$;
+grant select (photo) on public.profiles to authenticated;
+grant update (photo) on public.profiles to authenticated;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', false, 2097152, array['image/jpeg'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+create or replace function public.avatar_visible(obj_name text)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare folder text := split_part(obj_name, '/', 1);
+begin
+  if folder !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return false; end if;
+  return folder = auth.uid()::text or public.is_friend(folder::uuid) or public.shares_chat(folder::uuid);
+end $$;
+revoke execute on function public.avatar_visible(text) from public, anon;
+grant  execute on function public.avatar_visible(text) to authenticated;
+
+drop policy if exists "avatars: me, friends and chat members see" on storage.objects;
+create policy "avatars: me, friends and chat members see" on storage.objects for select to authenticated
+  using (bucket_id = 'avatars' and public.avatar_visible(name));
+drop policy if exists "avatars: only my folder" on storage.objects;
+create policy "avatars: only my folder" on storage.objects for insert to authenticated
+  with check (bucket_id = 'avatars' and split_part(name, '/', 1) = auth.uid()::text);
+drop policy if exists "avatars: I remove mine" on storage.objects;
+create policy "avatars: I remove mine" on storage.objects for delete to authenticated
+  using (bucket_id = 'avatars' and owner_id = auth.uid()::text);

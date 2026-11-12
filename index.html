@@ -339,6 +339,14 @@ button.chat-head:hover{background:var(--c-surface2)}
 #photoView img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
 #photoView .close{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;display:grid;place-items:center}
 .src-sheet{width:min(400px,100%)}
+.crop-sheet{width:min(400px,100%)}
+.crop-stage{position:relative;width:min(300px,100%);aspect-ratio:1;margin:16px auto 6px;overflow:hidden;border-radius:18px;background:#000;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.crop-stage:active{cursor:grabbing}
+.crop-stage img{position:absolute;left:0;top:0;max-width:none;transform-origin:0 0;pointer-events:none}
+.crop-ring{position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px rgba(0,0,0,.55);border:2px solid rgba(255,255,255,.85);pointer-events:none}
+.crop-zoom{display:flex;align-items:center;gap:10px;width:min(300px,100%);margin:10px auto 0;color:var(--muted)}
+.crop-zoom input{flex:1;accent-color:var(--accent)}
+.photo-btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
 .src-list{display:flex;flex-direction:column;gap:8px;margin:16px 0 10px}
 .src-opt{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:14px;background:var(--c-surface2);border:1px solid var(--border);text-align:left;width:100%}
 .src-opt:hover{border-color:var(--accent)}
@@ -641,12 +649,14 @@ html.locked body{overflow:hidden}
       <div class="settings-grid">
         <div class="card">
           <h2>Your profile</h2>
-          <div class="sub">Friends see your name and animal</div>
+          <div class="sub">Friends see your name and your photo or animal</div>
           <div class="prof" style="margin-top:18px">
             <div id="profPreview"></div>
             <div class="field" style="flex:1;margin:0"><label for="profName">Name</label><input class="inp" id="profName" maxlength="30" placeholder="Your name"></div>
           </div>
-          <div class="field"><label>Animal</label><div class="styles" id="shirtStyles"></div></div>
+          <div class="photo-btns"><button type="button" class="btn" id="photoPick"><svg class="i" data-icon="camera"></svg><span>Choose photo</span></button><button type="button" class="btn ghost" id="photoRemove" hidden>Remove photo</button></div>
+          <div class="hint" style="margin-top:8px">Only you, your friends and people in your chats can see your photo.</div>
+          <div class="field"><label id="animalLabel">Animal</label><div class="styles" id="shirtStyles"></div></div>
           <div class="field"><label>Background color</label><div class="chips" id="shirtColors"></div></div>
         </div>
         <div class="card">
@@ -702,7 +712,7 @@ html.locked body{overflow:hidden}
     <div class="field"><label for="gUser">Username</label><input class="inp" id="gUser" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="20" placeholder="your_name"></div>
     <div class="field"><label for="gPass">Password</label><div class="pw"><input class="inp" id="gPass" name="password" type="password" autocomplete="current-password" maxlength="72"><button type="button" class="pw-eye" id="gEye" aria-label="Show password"><svg class="i" data-icon="eye"></svg></button></div></div>
     <div class="field" id="gConfirmWrap" style="display:none"><label for="gPass2">Confirm password</label><input class="inp" id="gPass2" type="password" autocomplete="new-password" maxlength="72"></div>
-    <div class="hint" id="gRules" style="display:none;text-align:left">Username: 3 to 20 lowercase letters, numbers or _. Password: at least 8 characters.</div>
+    <div class="hint" id="gRules" style="display:none;text-align:left">Username: 3 to 20 letters, numbers or _ (capitals don't matter when you sign in). Password: at least 8 characters.</div>
     <label class="agree" id="gAgreeWrap" style="display:none"><input type="checkbox" id="gAgree"><span>I agree to the <a id="gRulesLink" target="_blank" rel="noopener">Community Rules and Terms</a> and have read the <a id="gPrivacyLink" target="_blank" rel="noopener">Privacy Policy</a>. I'm at least 13 and I'll be kind.</span></label>
     <div class="gate-err" id="gErr" role="alert"></div>
     <button class="btn primary gate-go" id="gGo" type="submit">Sign in</button>
@@ -756,6 +766,15 @@ html.locked body{overflow:hidden}
     <button class="btn ghost" id="srcCancel" style="width:100%">Cancel</button>
   </div>
 </div>
+<div class="scrim" id="cropScrim">
+  <div class="modal crop-sheet" role="dialog" aria-modal="true" aria-labelledby="cropTitle">
+    <h2 id="cropTitle">Move and zoom</h2>
+    <div class="sub">Drag your photo so it fits in the circle</div>
+    <div class="crop-stage" id="cropStage"><img id="cropImg" alt="" draggable="false"><div class="crop-ring"></div></div>
+    <div class="crop-zoom"><svg class="i" data-icon="minus"></svg><input type="range" id="cropZoom" min="1" max="4" step="0.01" value="1" aria-label="Zoom"><svg class="i" data-icon="plus"></svg></div>
+    <div class="modal-actions"><button class="btn ghost" id="cropCancel">Cancel</button><button class="btn primary" id="cropUse">Use photo</button></div>
+  </div>
+</div>
 <input type="file" id="inLibrary" accept="image/*" hidden>
 <input type="file" id="inCamera" accept="image/*" capture="environment" hidden>
 <input type="file" id="inFile" accept="image/*,.heic,.heif" hidden>
@@ -801,6 +820,7 @@ const ICONS = {
   users:'<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="16.8" cy="9.3" r="2.5"/><path d="M15.8 14.3c2.5-.2 4.3 1.4 4.8 4.4"/>',
   sliders:'<path d="M4 7h9M18 7h2M4 17h2M11 17h9"/><circle cx="15.5" cy="7" r="2.3"/><circle cx="8.5" cy="17" r="2.3"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
+  minus:'<path d="M5 12h14"/>',
   left:'<path d="M14.5 6 8.5 12l6 6"/>', right:'<path d="m9.5 6 6 6-6 6"/>',
   x:'<path d="M6 6l12 12M18 6 6 18"/>',
   bell:'<path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5H5z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>',
@@ -969,7 +989,8 @@ const ANIMALS={
 };
 const animalOf=p=>ANIMALS[p?.style]?p.style:'fox';
 const animalSVG=(kind,size)=>`<svg viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true">${(ANIMALS[kind]||ANIMALS.fox).art}</svg>`;
-const avatar = (p,size=44) => `<span class="avatar" role="img" aria-label="${ANIMALS[animalOf(p)].name}" style="width:${size}px;height:${size}px;background:color-mix(in oklab,${p.shirt||BG_COLORS[0]} 38%,var(--c-surface2))">${animalSVG(animalOf(p),Math.round(size*.86))}</span>`;
+const photoOf = p => p?.photo_url||p?.photoData||null;
+const avatar = (p,size=44) => photoOf(p) ? `<span class="avatar" role="img" aria-label="Profile photo" style="width:${size}px;height:${size}px"><img src="${esc(photoOf(p))}" alt="" draggable="false"></span>` : `<span class="avatar" role="img" aria-label="${ANIMALS[animalOf(p)].name}" style="width:${size}px;height:${size}px;background:color-mix(in oklab,${p.shirt||BG_COLORS[0]} 38%,var(--c-surface2))">${animalSVG(animalOf(p),Math.round(size*.86))}</span>`;
 
 /* ================= Profile & settings ================= */
 let profile = Object.assign({name:'',shirt:BG_COLORS[0],style:'fox'}, store.get('profile',{}));
@@ -981,10 +1002,95 @@ function renderProfileEditor(){
   if(document.activeElement!==$('#profName')) $('#profName').value=profile.name;
   $('#shirtColors').innerHTML=BG_COLORS.map(c=>`<button type="button" class="swatch ${c===profile.shirt?'on':''}" style="background:${c}" data-c="${c}" aria-label="Background color ${c}"></button>`).join('');
   $('#shirtColors').querySelectorAll('.swatch').forEach(s=>s.onclick=()=>{ profile.shirt=s.dataset.c; saveProfile(); renderProfileEditor(); });
-  $('#shirtStyles').innerHTML=Object.entries(ANIMALS).map(([v,a])=>`<button type="button" class="style-opt ${v===profile.style?'on':''}" data-v="${v}" aria-label="${a.name}">${avatar({...profile,style:v},44)}<span>${a.name}</span></button>`).join('');
+  $('#shirtStyles').innerHTML=Object.entries(ANIMALS).map(([v,a])=>`<button type="button" class="style-opt ${v===profile.style?'on':''}" data-v="${v}" aria-label="${a.name}">${avatar({shirt:profile.shirt,style:v},44)}<span>${a.name}</span></button>`).join('');
+  $('#photoRemove').hidden=!profile.photo;
+  $('#photoPick').lastChild.textContent=profile.photo?'Change photo':'Choose photo';
+  $('#animalLabel').textContent=profile.photo?'Animal (shows if you remove your photo)':'Animal';
   $('#shirtStyles').querySelectorAll('.style-opt').forEach(s=>s.onclick=()=>{ profile.style=s.dataset.v; saveProfile(); renderProfileEditor(); });
 }
 $('#profName').oninput=e=>{ profile.name=e.target.value.slice(0,30); saveProfile(); renderProfileEditor(); };
+
+/* ---------- Profile photo ---------- */
+const blobToDataURL=b=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsDataURL(b); });
+// Another device may have changed the photo: bring this one up to date
+async function syncMyPhoto(){
+  const online=Cloud.me?.photo||null;
+  if(online===(profile.photo||null)&&(!online||profile.photoData)) return;
+  try{
+    if(online){ profile.photoData=await blobToDataURL(await Cloud.api.downloadPhoto(online)); profile.photo=online; }
+    else { delete profile.photo; delete profile.photoData; }
+    store.set('profile',profile); renderMyCard(); renderProfileEditor();
+  }catch{}
+}
+$('#photoPick').onclick=async()=>{
+  if(!Cloud.on){ toast('You need to be online','Connect to the internet to add a profile photo','cloud'); return; }
+  const f=await choosePhoto({selfie:true}); if(!f) return;
+  const blob=await cropPhoto(f); if(!blob) return;
+  const btn=$('#photoPick'); btn.disabled=true; btn.lastChild.textContent='Saving...';
+  try{
+    const path=await Cloud.api.setPhoto(blob,profile.photo);
+    profile.photo=path; profile.photoData=await blobToDataURL(blob); Cloud.me.photo=path;
+    store.set('profile',profile); renderMyCard(); toast('Photo saved','Your friends will see it next time they open Daybloom','check'); buzz('success');
+  }catch(e){ toast('Could not save photo',e.message,'x'); }
+  finally{ btn.disabled=false; renderProfileEditor(); }
+};
+$('#photoRemove').onclick=async()=>{
+  if(!Cloud.on){ toast('You need to be online','Connect to the internet to remove your photo','cloud'); return; }
+  try{
+    await Cloud.api.removePhoto(profile.photo);
+    delete profile.photo; delete profile.photoData; if(Cloud.me) Cloud.me.photo=null;
+    store.set('profile',profile); renderMyCard(); renderProfileEditor(); toast('Photo removed','Friends see your animal again','check');
+  }catch(e){ toast('Could not remove photo',e.message,'x'); }
+};
+
+// Crop screen: drag to move, pinch, scroll or use the slider to zoom. Makes a 512x512 picture.
+function cropPhoto(file){
+  return new Promise(resolve=>{
+    const url=URL.createObjectURL(file), img=new Image();
+    const stage=$('#cropStage'), pic=$('#cropImg'), zoom=$('#cropZoom');
+    let V=0, base=1, z=1, x=0, y=0, settled=false;
+    const pointers=new Map(); let pinch=null;
+    const finish=b=>{ if(settled) return; settled=true; closeScrim('#cropScrim'); URL.revokeObjectURL(url); window.removeEventListener('resize',layout); resolve(b||null); };
+    const scale=()=>base*z;
+    function clamp(){
+      const w=img.naturalWidth*scale(), h=img.naturalHeight*scale();
+      x=Math.min(0,Math.max(V-w,x)); y=Math.min(0,Math.max(V-h,y));
+    }
+    function draw(){ clamp(); pic.style.width=img.naturalWidth*scale()+'px'; pic.style.transform=`translate(${x}px,${y}px)`; zoom.value=z; }
+    function zoomTo(nz,cx=V/2,cy=V/2){
+      nz=Math.min(4,Math.max(1,nz)); const k=nz/z;
+      x=cx-(cx-x)*k; y=cy-(cy-y)*k; z=nz; draw();
+    }
+    function layout(){
+      const old=V; V=stage.clientWidth||280; base=V/Math.min(img.naturalWidth,img.naturalHeight);
+      if(!old){ x=(V-img.naturalWidth*base)/2; y=(V-img.naturalHeight*base)/2; } else { x*=V/old; y*=V/old; }
+      draw();
+    }
+    const pt=e=>{ const r=stage.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; };
+    stage.onpointerdown=e=>{ stage.setPointerCapture(e.pointerId); pointers.set(e.pointerId,pt(e)); if(pointers.size===2){ const [a,b]=[...pointers.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z}; } };
+    stage.onpointermove=e=>{
+      if(!pointers.has(e.pointerId)) return;
+      const prev=pointers.get(e.pointerId), now=pt(e); pointers.set(e.pointerId,now);
+      if(pointers.size===1){ x+=now.x-prev.x; y+=now.y-prev.y; draw(); }
+      else if(pinch){ const [a,b]=[...pointers.values()]; zoomTo(pinch.z*Math.hypot(a.x-b.x,a.y-b.y)/pinch.d,(a.x+b.x)/2,(a.y+b.y)/2); }
+    };
+    stage.onpointerup=stage.onpointercancel=e=>{ pointers.delete(e.pointerId); if(pointers.size<2) pinch=null; };
+    stage.onwheel=e=>{ e.preventDefault(); const p=pt(e); zoomTo(z*Math.exp(-e.deltaY/300),p.x,p.y); };
+    zoom.oninput=()=>zoomTo(+zoom.value);
+    $('#cropCancel').onclick=()=>finish(null);
+    $('#cropScrim').onclick=e=>{ if(e.target.id==='cropScrim') finish(null); };
+    $('#cropUse').onclick=()=>{
+      if(!V) layout();
+      const S=512, cv=document.createElement('canvas'); cv.width=cv.height=S;
+      const g=cv.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,S,S); g.imageSmoothingQuality='high';
+      g.drawImage(img,-x/scale(),-y/scale(),V/scale(),V/scale(),0,0,S,S);
+      cv.toBlob(b=>b?finish(b):toast('Could not use that photo','Try a different one','x'),'image/jpeg',.88);
+    };
+    img.onload=()=>{ pic.src=url; z=1; V=0; openScrim('#cropScrim'); requestAnimationFrame(layout); window.addEventListener('resize',layout); };
+    img.onerror=()=>{ toast('Could not open that photo',/\.(heic|heif)$/i.test(file.name)?'This browser cannot open HEIC photos. Try a JPEG, or pick it from the Photos app.':"That file isn't a photo Daybloom can use",'x'); finish(null); };
+    img.src=url;
+  });
+}
 
 const RING_MODES=[['ring','Ring like a timer','While Daybloom is open, your ringtone plays until you tap Stop'],['once','Chime once','While Daybloom is open, your ringtone plays one time'],['silent','Silent','Just shows a banner, no sound']];
 function renderRingOpts(){
@@ -1689,6 +1795,12 @@ function supabaseApi({supabaseUrl,supabaseKey}){
   const sb=window.supabase.createClient(supabaseUrl,supabaseKey);
   let uid=null;
   const ok=({data,error})=>{ if(error) throw new Error(error.message); return data; };
+  // Profile photos are private too, so they're shown through short-lived signed links
+  async function signAvatars(list){
+    const paths=[...new Set(list.map(p=>p.photo).filter(Boolean))], urls={};
+    if(paths.length){ try{ const {data}=await sb.storage.from('avatars').createSignedUrls(paths,3600); for(const u of data||[]) if(u.signedUrl) urls[u.path]=u.signedUrl; }catch{} }
+    return list.map(p=>({...p,photo_url:urls[p.photo]||null}));
+  }
   return {
     async init(p){
       let { data:{ session } } = await sb.auth.getSession();
@@ -1696,6 +1808,19 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       uid=session.user.id;
       return ok(await sb.rpc('ensure_profile',{p_name:p.name||'Me',p_shirt:p.shirt,p_style:p.style}));
     },
+    async setPhoto(blob,old){
+      const path=`${uid}/${uuid()}.jpg`;
+      ok(await sb.storage.from('avatars').upload(path,blob,{contentType:'image/jpeg',upsert:false}));
+      try{ ok(await sb.from('profiles').update({photo:path}).eq('id',uid)); }
+      catch(e){ await sb.storage.from('avatars').remove([path]).catch(()=>{}); throw e; }
+      if(old) await sb.storage.from('avatars').remove([old]).catch(()=>{});
+      return path;
+    },
+    async removePhoto(old){
+      ok(await sb.from('profiles').update({photo:null}).eq('id',uid));
+      if(old) await sb.storage.from('avatars').remove([old]).catch(()=>{});
+    },
+    async downloadPhoto(path){ return ok(await sb.storage.from('avatars').download(path)); },
     async saveProfile(p){ ok(await sb.from('profiles').update({name:(p.name||'Me').slice(0,30),shirt:p.shirt,style:p.style}).eq('id',uid)); },
     async pullEvents(){
       return ok(await sb.from('events').select('id,title,date,time,all_day,notes,repeat,remind,color,private,updated_at').eq('owner',uid))
@@ -1710,7 +1835,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       const ids=ok(await sb.from('friendships').select('friend_id').eq('user_id',uid)).map(f=>f.friend_id);
       if(!ids.length) return [];
       const [profs,evs]=await Promise.all([
-        sb.from('profiles').select('id,name,username,shirt,style').in('id',ids).then(ok),
+        sb.from('profiles').select('id,name,username,shirt,style,photo').in('id',ids).then(ok).then(signAvatars),
         sb.from('events').select('id,owner,title,date,time,all_day,notes,repeat,color').in('owner',ids).then(ok).then(rows=>rows.map(e=>({...e,allDay:e.all_day})))
       ]);
       return profs.map(p=>({...p,name:clean(p.name),events:evs.filter(e=>e.owner===p.id).map(e=>({...e,title:clean(e.title),notes:clean(e.notes)}))}));
@@ -1728,7 +1853,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
         sb.from('messages').select('id,conversation_id,sender,body,image_path,created_at').in('conversation_id',convIds).order('created_at',{ascending:false}).limit(300).then(ok)
       ]);
       const ids=[...new Set(members.map(m=>m.user_id))];
-      const byId=Object.fromEntries(ok(await sb.from('profiles').select('id,name,username,shirt,style').in('id',ids)).map(p=>[p.id,p]));
+      const byId=Object.fromEntries((await signAvatars(ok(await sb.from('profiles').select('id,name,username,shirt,style,photo').in('id',ids)))).map(p=>[p.id,p]));
       // Group photos are private, so they're shown through short-lived signed links
       const paths=convs.filter(c=>c.photo_kind==='photo'&&c.photo_value).map(c=>c.photo_value), urls={};
       if(paths.length){ const {data}=await sb.storage.from('chat-photos').createSignedUrls(paths,3600); for(const u of data||[]) if(u.signedUrl) urls[u.path]=u.signedUrl; }
@@ -1762,6 +1887,8 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       // Photos can only be removed by the person who uploaded them, so clear ours before the account goes
       const mine=ok(await sb.from('messages').select('image_path').eq('sender',uid).not('image_path','is',null)).map(r=>r.image_path);
       for(let i=0;i<mine.length;i+=100) await sb.storage.from('chat-media').remove(mine.slice(i,i+100)).catch(()=>{});
+      const pics=(await sb.storage.from('avatars').list(uid).then(ok).catch(()=>[])).map(f=>`${uid}/${f.name}`);
+      if(pics.length) await sb.storage.from('avatars').remove(pics).catch(()=>{});
       ok(await sb.rpc('delete_account'));
       await sb.auth.signOut().catch(()=>{});
     },
@@ -1830,6 +1957,7 @@ async function startCloud(api){
       store.set('profile',profile); store.set('profileSynced',true); renderProfileEditor();
     }
     await api.saveProfile(profile);
+    syncMyPhoto();
     await syncEvents();
     await refreshBlocks();
     renderMyCard(); await refreshFriends(); await refreshChats();
@@ -2202,7 +2330,8 @@ $('#photoView').onclick=()=>$('#photoView').classList.remove('open');
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('#photoView').classList.remove('open'); });
 // Ask where the photo should come from, like the menu on an iPhone
 const touchDevice=matchMedia('(pointer: coarse)').matches;
-function choosePhoto(){
+function choosePhoto({selfie=false}={}){
+  $('#inCamera').setAttribute('capture',selfie?'user':'environment');
   return new Promise(resolve=>{
     let settled=false; const done=f=>{ if(settled) return; settled=true; closeScrim('#srcScrim'); resolve(f||null); };
     $('#srcCameraOpt').hidden=!touchDevice;
@@ -2571,14 +2700,15 @@ function initGate(){
   $('#gEye').onclick=()=>{ const show=$('#gPass').type==='password'; ['#gPass','#gPass2'].forEach(id=>$(id).type=show?'text':'password');
     $('#gEye').innerHTML=icon(show?'lock':'eye'); $('#gEye').setAttribute('aria-label',show?'Hide password':'Show password'); };
   // Only rewrite the box when something needs fixing; rewriting on every key press makes iPhone keyboards drop letters
-  $('#gUser').oninput=e=>{ const v=e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''); if(v!==e.target.value) e.target.value=v; $('#gErr').textContent=''; };
+  $('#gUser').oninput=e=>{ const v=e.target.value.replace(/[^A-Za-z0-9_]/g,''); if(v!==e.target.value) e.target.value=v; $('#gErr').textContent=''; };
   $('#gPass').oninput=$('#gPass2').oninput=()=>$('#gErr').textContent='';
   $('#gNote').textContent=CLOUD?'Your account works on any phone or computer.':CLOUD_SET_UP?"You're offline. Connect to the internet to sign in or sign up.":'Accounts are saved on this device for now. They move online once Daybloom is connected.';
   if(!localStorage.getItem('si.accounts')&&!CLOUD_SET_UP) setMode('up');
   $('#gateForm').onsubmit=async e=>{
     e.preventDefault();
-    const u=$('#gUser').value.trim(), pw=$('#gPass').value, err=t=>{ $('#gErr').textContent=t; };
-    if(!USERNAME_RE.test(u)) return err('Usernames are 3 to 20 lowercase letters, numbers or _');
+    // Capital letters are fine to type; "Eli" and "eli" are the same account
+    const typed=$('#gUser').value.trim(), u=typed.toLowerCase(), pw=$('#gPass').value, err=t=>{ $('#gErr').textContent=t; };
+    if(!USERNAME_RE.test(u)) return err('Usernames are 3 to 20 letters, numbers or _');
     if(mode==='up'&&pw.length<8) return err('Passwords need at least 8 characters');
     if(mode==='up'&&pw!==$('#gPass2').value) return err("The two passwords don't match");
     if(mode==='up'&&!$('#gAgree').checked) return err('Please agree to the Community Rules to make an account');
@@ -2588,7 +2718,9 @@ function initGate(){
       if(CLOUD_SET_UP&&!CLOUD) throw new Error("You're offline. Connect to the internet and try again.");
       const sess=CLOUD?await cloudAuth(mode,u,pw):await localAuth(mode,u,pw);
       localStorage.setItem('si.session',JSON.stringify(sess));
-      if(mode==='up'){ const k='si.u.'+sess.id+'.settings', st=JSON.parse(localStorage.getItem(k)||'{}'); st.rulesAccepted=RULES_VERSION; localStorage.setItem(k,JSON.stringify(st)); }
+      if(mode==='up'){ const k='si.u.'+sess.id+'.settings', st=JSON.parse(localStorage.getItem(k)||'{}'); st.rulesAccepted=RULES_VERSION; localStorage.setItem(k,JSON.stringify(st));
+        // Your name starts out the way you typed your username, capitals and all
+        const pk='si.u.'+sess.id+'.profile', pr=JSON.parse(localStorage.getItem(pk)||'{}'); if(!pr.name){ pr.name=typed; localStorage.setItem(pk,JSON.stringify(pr)); } }
       claimOldData('si.u.'+sess.id+'.');
       location.reload();
     }catch(x){ err(x.message||'Something went wrong. Try again.'); go.disabled=false; go.textContent=mode==='up'?'Create account':'Sign in'; }

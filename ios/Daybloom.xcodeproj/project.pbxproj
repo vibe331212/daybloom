@@ -216,8 +216,8 @@
 				INFOPLIST_FILE = Daybloom/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Daybloom;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Daybloom uses the camera when you take a photo to send in a chat or use as a group photo.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Daybloom lets you pick photos to send in chats or use as a group photo.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Daybloom uses the camera when you take a photo for your profile, a chat, or a group.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Daybloom lets you pick photos for your profile, your chats, and your groups.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -246,8 +246,8 @@
 				INFOPLIST_FILE = Daybloom/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Daybloom;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Daybloom uses the camera when you take a photo to send in a chat or use as a group photo.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Daybloom lets you pick photos to send in chats or use as a group photo.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Daybloom uses the camera when you take a photo for your profile, a chat, or a group.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Daybloom lets you pick photos for your profile, your chats, and your groups.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
