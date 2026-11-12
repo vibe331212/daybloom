@@ -148,12 +148,10 @@ $$;
 revoke execute on function public.is_friend(uuid)                   from public, anon;
 revoke execute on function public.new_friend_code()                 from public, anon, authenticated;
 revoke execute on function public.ensure_profile(text, text, text)  from public, anon;
-revoke execute on function public.add_friend(text)                  from public, anon;
 revoke execute on function public.remove_friend(uuid)               from public, anon;
 revoke execute on function public.new_code()                        from public, anon;
 grant  execute on function public.is_friend(uuid)                   to authenticated;
 grant  execute on function public.ensure_profile(text, text, text)  to authenticated;
-grant  execute on function public.add_friend(text)                  to authenticated;
 grant  execute on function public.remove_friend(uuid)               to authenticated;
 grant  execute on function public.new_code()                        to authenticated;
 
@@ -417,8 +415,6 @@ end $$;
 
 revoke execute on function public.current_code() from public, anon;
 grant  execute on function public.current_code() to authenticated;
-revoke execute on function public.add_friend(text) from public, anon;
-grant  execute on function public.add_friend(text) to authenticated;
 
 -- ---------- Reactions on messages (like tapbacks) ----------
 -- One reaction per person per message. Removing a reaction sets kind to null,
@@ -541,6 +537,8 @@ begin
   on conflict do nothing;
   return json_build_object('id', f.id, 'name', f.name, 'username', f.username, 'shirt', f.shirt, 'style', f.style);
 end $$;
+revoke execute on function public.add_friend(text) from public, anon;
+grant  execute on function public.add_friend(text) to authenticated;
 
 -- ---------- Reports (only the app's owner can read these, in the Supabase dashboard) ----------
 create table if not exists public.reports (
