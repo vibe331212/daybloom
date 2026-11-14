@@ -150,6 +150,10 @@ textarea.inp{resize:vertical;min-height:70px}
 .chip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .swatch{width:30px;height:30px;border-radius:50%;border:2px solid transparent;outline:2px solid transparent;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15);transition:.15s}
 .swatch.on{outline-color:var(--text);border-color:var(--c-surface)}
+#shirtColors{gap:10px}
+.any-color{position:relative;display:inline-block;cursor:pointer;background:conic-gradient(#ef4444,#eab308,#22c55e,#06b6d4,#3b82f6,#a855f7,#ec4899,#ef4444)}
+.any-color::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--pick);box-shadow:0 0 0 2px var(--c-surface)}
+.any-color input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
 .hint{font-size:12px;color:var(--muted);margin-top:4px}
 .allday-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;padding:12px 14px;border-radius:12px;background:var(--c-surface2);border:1px solid var(--border)}
 .allday-row .k{font-weight:600;font-size:14px}
@@ -657,7 +661,7 @@ html.locked body{overflow:hidden}
           <div class="photo-btns"><button type="button" class="btn" id="photoPick"><svg class="i" data-icon="camera"></svg><span>Choose photo</span></button><button type="button" class="btn ghost" id="photoRemove" hidden>Remove photo</button></div>
           <div class="hint" style="margin-top:8px">Only you, your friends and people in your chats can see your photo.</div>
           <div class="field"><label id="animalLabel">Animal</label><div class="styles" id="shirtStyles"></div></div>
-          <div class="field"><label>Background color</label><div class="chips" id="shirtColors"></div></div>
+          <div class="field"><label>Background color</label><div class="chips" id="shirtColors"></div><div class="hint" style="margin-top:8px">Tap the rainbow circle to pick any color.</div></div>
         </div>
         <div class="card">
           <h2>Reminders</h2>
@@ -903,6 +907,8 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
 
 /* ================= Animal avatars ================= */
 // The color someone picks fills the circle behind their animal (stored as "shirt" for older accounts)
+// Profile backgrounds: lots of colors, plus "Any color" for everything else
+const PROFILE_COLORS=[['#7c5cff','Purple'],['#a855f7','Violet'],['#c4b5fd','Lavender'],['#ec4899','Pink'],['#f9a8d4','Light pink'],['#ef4444','Red'],['#fb7185','Coral'],['#f97316','Orange'],['#fdba74','Peach'],['#eab308','Yellow'],['#fde68a','Light yellow'],['#84cc16','Lime'],['#22c55e','Green'],['#86efac','Mint'],['#14b8a6','Teal'],['#06b6d4','Cyan'],['#7dd3fc','Light blue'],['#38bdf8','Sky blue'],['#3b82f6','Blue'],['#1e3a8a','Navy'],['#92400e','Brown'],['#d6b88c','Tan'],['#94a3b8','Gray'],['#334155','Slate'],['#111111','Black'],['#f1f5f9','White']];
 const BG_COLORS=['#7c5cff','#3b82f6','#06b6d4','#22c55e','#eab308','#f97316','#ef4444','#ec4899','#334155','#f1f5f9'];
 const EYE=(x,y)=>`<ellipse cx="${x}" cy="${y}" rx="2.6" ry="3" fill="#2a1c14"/><circle cx="${x+.9}" cy="${y-1.1}" r=".95" fill="#fff"/>`;
 const SMILE=(y,c)=>`<path d="M32 ${y}v2.4M29.2 ${y+3.2}q2.8 1.8 5.6 0" stroke="${c}" stroke-width="1.4" fill="none" stroke-linecap="round"/>`;
@@ -990,7 +996,7 @@ const ANIMALS={
 const animalOf=p=>ANIMALS[p?.style]?p.style:'fox';
 const animalSVG=(kind,size)=>`<svg viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true">${(ANIMALS[kind]||ANIMALS.fox).art}</svg>`;
 const photoOf = p => p?.photo_url||p?.photoData||null;
-const avatar = (p,size=44) => photoOf(p) ? `<span class="avatar" role="img" aria-label="Profile photo" style="width:${size}px;height:${size}px"><img src="${esc(photoOf(p))}" alt="" draggable="false"></span>` : `<span class="avatar" role="img" aria-label="${ANIMALS[animalOf(p)].name}" style="width:${size}px;height:${size}px;background:color-mix(in oklab,${p.shirt||BG_COLORS[0]} 38%,var(--c-surface2))">${animalSVG(animalOf(p),Math.round(size*.86))}</span>`;
+const avatar = (p,size=44) => photoOf(p) ? `<span class="avatar" role="img" aria-label="Profile photo" style="width:${size}px;height:${size}px"><img src="${esc(photoOf(p))}" alt="" draggable="false"></span>` : `<span class="avatar" role="img" aria-label="${ANIMALS[animalOf(p)].name}" style="width:${size}px;height:${size}px;background:${/^#[0-9a-f]{6}$/i.test(p.shirt||'')?p.shirt:BG_COLORS[0]}"><img src="animals/${animalOf(p)}.webp" alt="" draggable="false"></span>`;
 
 /* ================= Profile & settings ================= */
 let profile = Object.assign({name:'',shirt:BG_COLORS[0],style:'fox'}, store.get('profile',{}));
@@ -1000,8 +1006,15 @@ function saveProfile(){ store.set('profile',profile); renderMyCard(); queueProfi
 function renderProfileEditor(){
   $('#profPreview').innerHTML=avatar(profile,84);
   if(document.activeElement!==$('#profName')) $('#profName').value=profile.name;
-  $('#shirtColors').innerHTML=BG_COLORS.map(c=>`<button type="button" class="swatch ${c===profile.shirt?'on':''}" style="background:${c}" data-c="${c}" aria-label="Background color ${c}"></button>`).join('');
-  $('#shirtColors').querySelectorAll('.swatch').forEach(s=>s.onclick=()=>{ profile.shirt=s.dataset.c; saveProfile(); renderProfileEditor(); });
+  const cur=(profile.shirt||'').toLowerCase(), custom=!PROFILE_COLORS.some(([c])=>c===cur);
+  $('#shirtColors').innerHTML=PROFILE_COLORS.map(([c,n])=>`<button type="button" class="swatch ${c===cur?'on':''}" style="background:${c}" data-c="${c}" aria-label="${n}" title="${n}"></button>`).join('')
+    +`<label class="swatch any-color ${custom?'on':''}" title="Any color" style="--pick:${custom?cur:'transparent'}"><input type="color" id="anyColor" value="${/^#[0-9a-f]{6}$/.test(cur)?cur:'#7dd3fc'}" aria-label="Any color"></label>`;
+  $('#shirtColors').querySelectorAll('button.swatch').forEach(s=>s.onclick=()=>{ profile.shirt=s.dataset.c; saveProfile(); renderProfileEditor(); });
+  // While dragging in the color picker, only repaint the previews so the picker stays open
+  const any=$('#anyColor');
+  any.oninput=()=>{ profile.shirt=any.value.toLowerCase(); any.parentElement.style.setProperty('--pick',profile.shirt);
+    $('#profPreview').innerHTML=avatar(profile,84); document.querySelectorAll('#shirtStyles .avatar').forEach(a=>{ if(!a.querySelector('img[src^="data:"],img[src^="http"]')) a.style.background=profile.shirt; }); };
+  any.onchange=()=>{ profile.shirt=any.value.toLowerCase(); saveProfile(); renderProfileEditor(); };
   $('#shirtStyles').innerHTML=Object.entries(ANIMALS).map(([v,a])=>`<button type="button" class="style-opt ${v===profile.style?'on':''}" data-v="${v}" aria-label="${a.name}">${avatar({shirt:profile.shirt,style:v},44)}<span>${a.name}</span></button>`).join('');
   $('#photoRemove').hidden=!profile.photo;
   $('#photoPick').lastChild.textContent=profile.photo?'Change photo':'Choose photo';
