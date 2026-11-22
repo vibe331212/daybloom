@@ -41,6 +41,7 @@ create index if not exists events_owner_idx on public.events(owner);
 alter table public.profiles drop constraint if exists profiles_style_check;
 alter table public.profiles add constraint profiles_style_check check (style in
   ('fox','wolf','bear','mouse','cat','rabbit','panda','owl','raccoon','lion',
+   'dog','tiger','penguin','koala','monkey','elephant','giraffe','deer','redpanda','otter',
    'classic','stripes','pocket','star','bolt'));
 alter table public.profiles alter column style set default 'fox';
 
