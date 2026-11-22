@@ -717,6 +717,7 @@ html.locked body{overflow:hidden}
         <div class="card">
           <h2>Account</h2>
           <div class="set-row"><div><div class="k">Settings passcode</div><div class="v">You type it every time you open Settings</div></div><button class="btn ghost" id="pcChange">Change</button></div>
+          <div class="set-row" id="bioRow" hidden><div><div class="k" id="bioName">Face ID</div><div class="v" id="bioSub">Open Settings with Face ID instead of your passcode</div></div><button type="button" class="switch" id="bioSwitch" role="switch" aria-checked="false" aria-label="Face ID"><i></i></button></div>
           <div class="set-row"><div><div class="k" id="acctName"></div><div class="v" id="acctMode"></div></div><button class="btn ghost" id="signOut">Sign out</button></div>
           <div class="set-row"><div><div class="k">Delete account</div><div class="v">Erases your account, events, friends and the messages you sent</div></div><button class="btn danger" id="deleteAcct">Delete</button></div>
         </div>
@@ -2593,6 +2594,7 @@ async function unlockSettings(){
   let has;
   try{ has=await pcHas(); }catch(e){ toast('Settings are locked',e.message,'lock'); return false; }
   if(!has) return makePasscode({title:'Make a Settings passcode',sub:'Pick 4 numbers. You\'ll type them every time you open Settings, so nobody else can change them.'});
+  if(store.get('pcBio',null)?.on&&await bioUnlock()) return true;   // anything but a match falls back to the passcode
   return new Promise(res=>{
     delete $('#safety').dataset.locked;
     openSafety(`<div style="text-align:center">${icon('lock')}</div><h2 style="text-align:center;margin-top:6px">Enter your passcode</h2>
@@ -2605,7 +2607,7 @@ async function unlockSettings(){
     inp.addEventListener('input',async()=>{
       if(inp.value.length<4||busy) return; busy=true;
       try{
-        if(await pcCheck(inp.value)){ myPasscode=inp.value; closeSafety(); res(true); }
+        if(await pcCheck(inp.value)){ myPasscode=inp.value; closeSafety(); res(true); setTimeout(offerBio,700); }
         else { $('#pcErr').textContent='That\'s not it. Try again.'; pcShake(inp); }
       }catch(e){ $('#pcErr').textContent=e.message; inp.value=''; }
       busy=false;
@@ -2621,17 +2623,19 @@ function makePasscode({title,sub,locked=false,change=false}){
     if(locked) $('#safety').dataset.locked='1'; else delete $('#safety').dataset.locked;
     openSafety(`<div style="text-align:center">${icon('lock')}</div><h2 style="text-align:center;margin-top:6px">${title}</h2>
       <div class="sub" style="text-align:center;line-height:1.5">${sub}</div>
-      ${pcBox('pcNew','New passcode')}${pcBox('pcNew2','Type it again')}
+      ${change&&!myPasscode?pcBox('pcOld','Current passcode'):''}${pcBox('pcNew','New passcode')}${pcBox('pcNew2','Type it again')}
       <div class="gate-err" id="pcErr" role="alert" style="text-align:center"></div>
       <div class="modal-actions"${locked?' style="justify-content:center"':''}>${locked?'':'<button class="btn ghost" id="pcCancel">Cancel</button>'}<button class="btn primary" id="pcSave">Save passcode</button></div>`);
-    const a=$('#pcNew'), b=$('#pcNew2'); digitsOnly(a); digitsOnly(b); setTimeout(()=>a.focus(),80);
+    const a=$('#pcNew'), b=$('#pcNew2'), o=$('#pcOld'); digitsOnly(a); digitsOnly(b); if(o) digitsOnly(o); setTimeout(()=>(o||a).focus(),80);
+    o?.addEventListener('input',()=>{ if(o.value.length===4) a.focus(); });
     a.addEventListener('input',()=>{ if(a.value.length===4) b.focus(); });
     if(!locked) $('#pcCancel').onclick=()=>{ closeSafety(); res(false); };
     $('#pcSave').onclick=async()=>{
       if(!PC_RE.test(a.value)){ $('#pcErr').textContent='The passcode has to be 4 numbers'; return pcShake(a); }
       if(a.value!==b.value){ $('#pcErr').textContent='Those two don\'t match'; return pcShake(b); }
       const btn=$('#pcSave'); btn.disabled=true;
-      try{ await pcSet(a.value,change?myPasscode:null); delete $('#safety').dataset.locked; closeSafety(); toast(change?'Passcode changed':'Passcode saved','You\'ll type it to open Settings','lock'); res(true); }
+      if(o&&!PC_RE.test(o.value)){ $('#pcErr').textContent='Type your current passcode'; return pcShake(o); }
+      try{ await pcSet(a.value,change?(o?o.value:myPasscode):null); delete $('#safety').dataset.locked; closeSafety(); toast(change?'Passcode changed':'Passcode saved','You\'ll type it to open Settings','lock'); res(true); }
       catch(e){ $('#pcErr').textContent=e.message; btn.disabled=false; }
     };
   });
@@ -2671,6 +2675,49 @@ async function askPasscodeIfNeeded(){
     <div class="modal-actions" style="justify-content:center"><button class="btn primary" id="pcUpdate">Update</button></div>`);
   $('#pcUpdate').onclick=()=>makePasscode({title:'Make your passcode',sub:'Pick 4 numbers you\'ll remember. You\'ll type them every time you open Settings.',locked:true});
 }
+/* ---- Face ID (iPhone app only) ---- */
+const askNative=(()=>{ const h=window.webkit?.messageHandlers?.daybloomAsync; return h?m=>h.postMessage(m):null; })();
+async function bioInfo(){ if(!askNative) return null; try{ const i=await askNative({type:'biometry'}); return i&&i.kind!=='none'?i:null; }catch{ return null; } }
+const bioName=i=>i?.kind==='touchID'?'Touch ID':'Face ID';
+async function bioUnlock(){
+  const saved=store.get('pcBio',null), info=await bioInfo();
+  if(!info?.available) return false;
+  // Someone added a new face (or finger) to this phone: stop trusting it until the passcode is typed
+  if(saved.state&&info.state&&saved.state!==info.state){
+    store.set('pcBio',null); renderBio();
+    toast(bioName(info)+' turned off','This phone has a new face or finger saved. Type your passcode, then turn it back on in Settings.','lock');
+    return false;
+  }
+  try{ const r=await askNative({type:'biometryAuth',reason:'Open your Daybloom Settings'}); return r?.result==='ok'; }catch{ return false; }
+}
+async function enableBio(){
+  const info=await bioInfo(); if(!info) return false;
+  if(!info.available){ toast(bioName(info)+' is off','Set it up in your iPhone Settings first, then try again','lock'); return false; }
+  try{
+    const r=await askNative({type:'biometryAuth',reason:'Turn on '+bioName(info)+' for Daybloom Settings'});
+    if(r?.result!=='ok') return false;
+    store.set('pcBio',{on:true,state:r.state||info.state||''}); renderBio(); toast(bioName(info)+' is on','Settings will open with '+bioName(info)+' now','check'); return true;
+  }catch{ return false; }
+}
+// After the first time typing the passcode in the iPhone app, offer Face ID once
+async function offerBio(){
+  if(store.get('pcBioAsked',false)||store.get('pcBio',null)?.on) return;
+  const info=await bioInfo(); if(!info?.available) return;
+  store.set('pcBioAsked',true);
+  if(await ask('Use '+bioName(info)+'?','Open Settings with '+bioName(info)+' instead of typing your passcode. You can change this in Settings any time.','Use '+bioName(info))) enableBio();
+}
+async function renderBio(){
+  const info=await bioInfo(); $('#bioRow').hidden=!info; if(!info) return;
+  const n=bioName(info), on=!!store.get('pcBio',null)?.on;
+  $('#bioName').textContent=n; $('#bioSwitch').setAttribute('aria-label',n); $('#bioSwitch').setAttribute('aria-checked',on);
+  $('#bioSub').textContent=info.available?`Open Settings with ${n} instead of your passcode`:`Set up ${n} in your iPhone Settings to use it here`;
+}
+$('#bioSwitch').onclick=async()=>{
+  if(store.get('pcBio',null)?.on){ store.set('pcBio',null); renderBio(); toast('Turned off','Settings will ask for your passcode','lock'); }
+  else await enableBio();
+};
+if(SI_USER) renderBio();
+
 let pcHiddenAt=0;
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){ pcHiddenAt=Date.now(); return; }

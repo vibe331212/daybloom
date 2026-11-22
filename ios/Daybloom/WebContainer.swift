@@ -18,6 +18,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         config.mediaTypesRequiringUserActionForPlayback = []
         config.websiteDataStore = .default()   // keeps sign-in and saved events between launches
         config.userContentController.add(WeakMessageHandler(self), name: "daybloom")
+        config.userContentController.addScriptMessageHandler(AsyncMessageHandler(), contentWorld: .page, name: "daybloomAsync")
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
