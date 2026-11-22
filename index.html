@@ -459,6 +459,11 @@ html.locked body{overflow:hidden}
 .pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:grid;place-items:center;color:var(--muted);border-radius:10px}
 .pw-eye:hover{color:var(--text)}
 .pw-eye svg{width:18px;height:18px}
+.pc-inp{font-size:32px;letter-spacing:.6em;text-align:center;padding-left:.6em;font-weight:700;height:64px;max-width:220px;margin:18px auto 0;display:block}
+.pc-small{letter-spacing:.4em;font-weight:600}
+.pc-shake{animation:pcShake .35s}
+@keyframes pcShake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+.pc-label{font-size:13px;font-weight:600;text-align:center;margin-top:16px;color:var(--muted,inherit)}
 .gate-err{color:#ff5a6a;font-size:13px;font-weight:500;min-height:18px;margin-top:12px;text-align:left}
 .gate-go{width:100%;margin-top:6px;padding:13px}
 .gate-note{margin-top:16px;line-height:1.5;font-size:12px;color:var(--muted)}
@@ -711,6 +716,7 @@ html.locked body{overflow:hidden}
         </div>
         <div class="card">
           <h2>Account</h2>
+          <div class="set-row"><div><div class="k">Settings passcode</div><div class="v">You type it every time you open Settings</div></div><button class="btn ghost" id="pcChange">Change</button></div>
           <div class="set-row"><div><div class="k" id="acctName"></div><div class="v" id="acctMode"></div></div><button class="btn ghost" id="signOut">Sign out</button></div>
           <div class="set-row"><div><div class="k">Delete account</div><div class="v">Erases your account, events, friends and the messages you sent</div></div><button class="btn danger" id="deleteAcct">Delete</button></div>
         </div>
@@ -742,6 +748,7 @@ html.locked body{overflow:hidden}
     <div class="field"><label for="gUser">Username</label><input class="inp" id="gUser" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="20" placeholder="your_name"></div>
     <div class="field"><label for="gPass">Password</label><div class="pw"><input class="inp" id="gPass" name="password" type="password" autocomplete="current-password" maxlength="72"><button type="button" class="pw-eye" id="gEye" aria-label="Show password"><svg class="i" data-icon="eye"></svg></button></div></div>
     <div class="field" id="gConfirmWrap" style="display:none"><label for="gPass2">Confirm password</label><input class="inp" id="gPass2" type="password" autocomplete="new-password" maxlength="72"></div>
+    <div class="field" id="gCodeWrap" style="display:none"><label for="gCode">Settings passcode</label><input class="inp pc-small" id="gCode" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" placeholder="4 numbers"><div class="hint" style="margin-top:6px;text-align:left">You'll type this to open Settings, so nobody else can change them.</div></div>
     <div class="hint" id="gRules" style="display:none;text-align:left">Username: 3 to 20 letters, numbers or _ (capitals don't matter when you sign in). Password: at least 8 characters.</div>
     <label class="agree" id="gAgreeWrap" style="display:none"><input type="checkbox" id="gAgree"><span>I agree to the <a id="gRulesLink" target="_blank" rel="noopener">Community Rules and Terms</a> and have read the <a id="gPrivacyLink" target="_blank" rel="noopener">Privacy Policy</a>. I'm at least 13 and I'll be kind.</span></label>
     <div class="gate-err" id="gErr" role="alert"></div>
@@ -927,7 +934,10 @@ function dayLabel(d){
 
 /* ================= Navigation ================= */
 const onView = {};
+let settingsUnlocked=false;
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
+  if(b.dataset.view==='settings'&&SI_USER&&!settingsUnlocked){ unlockSettings().then(ok=>{ if(ok){ settingsUnlocked=true; b.click(); } }); return; }
+  if(b.dataset.view!=='settings') settingsUnlocked=false;
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+b.dataset.view));
   store.set('view',b.dataset.view); onView[b.dataset.view]?.();
@@ -1847,6 +1857,14 @@ function supabaseApi({supabaseUrl,supabaseKey}){
     async unblock(user){ ok(await sb.rpc('unblock_user',{p_user:user})); },
     async report(user,message,reason,details){ ok(await sb.rpc('report_content',{p_user:user||null,p_message:message||null,p_reason:reason,p_details:details||''})); },
     async feedback(text){ ok(await sb.rpc('send_feedback',{p_details:text})); },
+    async hasPasscode(){ return !!ok(await sb.rpc('has_settings_passcode')); },
+    async checkPasscode(code){ return !!ok(await sb.rpc('check_settings_passcode',{p_code:code})); },
+    async setPasscode(code,old){ return !!ok(await sb.rpc('set_settings_passcode',{p_code:code,p_old:old||null})); },
+    async resetPasscode(username,pw,code){
+      const {error}=await sb.auth.signInWithPassword({email:userEmail(username),password:pw});
+      if(error) throw new Error(/invalid/i.test(error.message)?'That password is wrong':error.message);
+      ok(await sb.rpc('reset_settings_passcode',{p_code:code}));
+    },
     async myReplies(){ return ok(await sb.rpc('my_report_replies'))||[]; },
     async isAdmin(){ try{ return !!ok(await sb.rpc('is_admin')); }catch{ return false; } },
     async adminReports(){
@@ -1942,7 +1960,7 @@ async function startCloud(api){
     await syncEvents();
     await refreshBlocks();
     renderMyCard(); await refreshFriends(); await refreshChats();
-    askRulesIfNeeded();
+    askRulesIfNeeded().then(askPasscodeIfNeeded);
     try{ api.listen(onNewMessage,onReaction); }catch{}
     setInterval(pollChats,15000);
     initAdmin(); loadMyReplies();
@@ -2504,7 +2522,7 @@ async function offerImport(){
   document.querySelector('.tab[data-view="calendar"]')?.click();
   toast('Added to Daybloom',`${fresh.length} event${fresh.length===1?'':'s'} from ${from}, with reminders`); buzz('success');
 }
-document.querySelector(`.tab[data-view="${store.get('view','calendar')}"]`)?.click();
+{ const v=store.get('view','calendar'); document.querySelector(`.tab[data-view="${v==='settings'?'calendar':v}"]`)?.click(); }
 offerImport();
 
 /* ================= Safety: block, report, rules, support ================= */
@@ -2516,6 +2534,121 @@ async function refreshBlocks(){
 const openSafety=html=>{ $('#safety').innerHTML=html; openScrim('#safetyScrim'); };
 const closeSafety=()=>closeScrim('#safetyScrim');
 $('#safetyScrim').addEventListener('click',e=>{ if(e.target.id==='safetyScrim'&&!$('#safety').dataset.locked) closeSafety(); });
+/* ================= Settings passcode ================= */
+// 4 numbers you type to open Settings. Online accounts keep it on the server (only a scrambled copy),
+// device-only accounts keep a scrambled copy next to the password.
+const PC_RE=/^[0-9]{4}$/;
+let myPasscode=null;   // the code typed to open Settings this time, needed to change it
+const localAccts=()=>JSON.parse(localStorage.getItem('si.accounts')||'{}');
+const pcApi=()=>{ if(!Cloud.api) throw new Error('Connect to the internet to open Settings'); return Cloud.api; };
+async function pcHas(){ return SI_USER.mode==='cloud'?pcApi().hasPasscode():!!localAccts()[SI_USER.username]?.pc; }
+async function pcCheck(code){
+  if(SI_USER.mode==='cloud') return pcApi().checkPasscode(code);
+  const pc=localAccts()[SI_USER.username]?.pc; return !pc||await hashPassword(code,unb64(pc.salt))===pc.hash;
+}
+async function pcSaveLocal(code){
+  const a=localAccts(), salt=crypto.getRandomValues(new Uint8Array(16));
+  a[SI_USER.username].pc={salt:b64(salt),hash:await hashPassword(code,salt)}; localStorage.setItem('si.accounts',JSON.stringify(a));
+}
+async function pcSet(code,old){
+  if(SI_USER.mode==='cloud'){ if(!await pcApi().setPasscode(code,old)) throw new Error('Your current passcode is wrong'); }
+  else { if(localAccts()[SI_USER.username]?.pc&&!await pcCheck(old)) throw new Error('Your current passcode is wrong'); await pcSaveLocal(code); }
+  myPasscode=code;
+}
+async function pcReset(pw,code){
+  if(SI_USER.mode==='cloud') await pcApi().resetPasscode(SI_USER.username,pw,code);
+  else { const a=localAccts()[SI_USER.username]; if(!a||await hashPassword(pw,unb64(a.salt))!==a.hash) throw new Error('That password is wrong'); await pcSaveLocal(code); }
+  myPasscode=code;
+}
+const pcBox=(id,label)=>`${label?`<div class="pc-label">${label}</div>`:''}<input class="inp pc-inp" id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" aria-label="${label||'Passcode'}">`;
+const digitsOnly=el=>el.addEventListener('input',()=>{ const v=el.value.replace(/\D/g,'').slice(0,4); if(v!==el.value) el.value=v; $('#pcErr').textContent=''; });
+const pcShake=el=>{ el.classList.remove('pc-shake'); void el.offsetWidth; el.classList.add('pc-shake'); el.value=''; el.focus(); };
+
+// Asks for the passcode; resolves true when it's right
+async function unlockSettings(){
+  let has;
+  try{ has=await pcHas(); }catch(e){ toast('Settings are locked',e.message,'lock'); return false; }
+  if(!has) return makePasscode({title:'Make a Settings passcode',sub:'Pick 4 numbers. You\'ll type them every time you open Settings, so nobody else can change them.'});
+  return new Promise(res=>{
+    delete $('#safety').dataset.locked;
+    openSafety(`<div style="text-align:center">${icon('lock')}</div><h2 style="text-align:center;margin-top:6px">Enter your passcode</h2>
+      <div class="sub" style="text-align:center">Type your 4-number Settings passcode.</div>
+      ${pcBox('pcIn')}
+      <div class="gate-err" id="pcErr" role="alert" style="text-align:center"></div>
+      <div class="modal-actions" style="justify-content:space-between"><button class="btn ghost" id="pcForgot">Forgot passcode?</button><button class="btn ghost" id="pcCancel">Cancel</button></div>`);
+    const inp=$('#pcIn'); digitsOnly(inp); setTimeout(()=>inp.focus(),80);
+    let busy=false;
+    inp.addEventListener('input',async()=>{
+      if(inp.value.length<4||busy) return; busy=true;
+      try{
+        if(await pcCheck(inp.value)){ myPasscode=inp.value; closeSafety(); res(true); }
+        else { $('#pcErr').textContent='That\'s not it. Try again.'; pcShake(inp); }
+      }catch(e){ $('#pcErr').textContent=e.message; inp.value=''; }
+      busy=false;
+    });
+    $('#pcCancel').onclick=()=>{ closeSafety(); res(false); };
+    $('#pcForgot').onclick=()=>forgotPasscode().then(res);
+  });
+}
+
+// New passcode, typed twice. "locked" pop-ups can't be closed until it's made.
+function makePasscode({title,sub,locked=false,change=false}){
+  return new Promise(res=>{
+    if(locked) $('#safety').dataset.locked='1'; else delete $('#safety').dataset.locked;
+    openSafety(`<div style="text-align:center">${icon('lock')}</div><h2 style="text-align:center;margin-top:6px">${title}</h2>
+      <div class="sub" style="text-align:center;line-height:1.5">${sub}</div>
+      ${pcBox('pcNew','New passcode')}${pcBox('pcNew2','Type it again')}
+      <div class="gate-err" id="pcErr" role="alert" style="text-align:center"></div>
+      <div class="modal-actions"${locked?' style="justify-content:center"':''}>${locked?'':'<button class="btn ghost" id="pcCancel">Cancel</button>'}<button class="btn primary" id="pcSave">Save passcode</button></div>`);
+    const a=$('#pcNew'), b=$('#pcNew2'); digitsOnly(a); digitsOnly(b); setTimeout(()=>a.focus(),80);
+    a.addEventListener('input',()=>{ if(a.value.length===4) b.focus(); });
+    if(!locked) $('#pcCancel').onclick=()=>{ closeSafety(); res(false); };
+    $('#pcSave').onclick=async()=>{
+      if(!PC_RE.test(a.value)){ $('#pcErr').textContent='The passcode has to be 4 numbers'; return pcShake(a); }
+      if(a.value!==b.value){ $('#pcErr').textContent='Those two don\'t match'; return pcShake(b); }
+      const btn=$('#pcSave'); btn.disabled=true;
+      try{ await pcSet(a.value,change?myPasscode:null); delete $('#safety').dataset.locked; closeSafety(); toast(change?'Passcode changed':'Passcode saved','You\'ll type it to open Settings','lock'); res(true); }
+      catch(e){ $('#pcErr').textContent=e.message; btn.disabled=false; }
+    };
+  });
+}
+
+// Forgot it: type the account password, then pick a new one
+function forgotPasscode(){
+  return new Promise(res=>{
+    delete $('#safety').dataset.locked;
+    openSafety(`<h2>Forgot your passcode?</h2>
+      <div class="sub" style="line-height:1.5">Type your account password, the one you use to sign in, then pick a new passcode.</div>
+      <div class="field"><label for="pcPw">Account password</label><input class="inp" id="pcPw" type="password" autocomplete="current-password" maxlength="72"></div>
+      ${pcBox('pcNew','New passcode')}${pcBox('pcNew2','Type it again')}
+      <div class="gate-err" id="pcErr" role="alert" style="text-align:center"></div>
+      <div class="modal-actions"><button class="btn ghost" id="pcCancel">Cancel</button><button class="btn primary" id="pcSave">Save passcode</button></div>`);
+    const a=$('#pcNew'), b=$('#pcNew2'); digitsOnly(a); digitsOnly(b); setTimeout(()=>$('#pcPw').focus(),80);
+    $('#pcPw').oninput=()=>$('#pcErr').textContent='';
+    $('#pcCancel').onclick=()=>{ closeSafety(); res(false); };
+    $('#pcSave').onclick=async()=>{
+      if(!$('#pcPw').value){ $('#pcErr').textContent='Type your account password'; return; }
+      if(!PC_RE.test(a.value)){ $('#pcErr').textContent='The passcode has to be 4 numbers'; return pcShake(a); }
+      if(a.value!==b.value){ $('#pcErr').textContent='Those two don\'t match'; return pcShake(b); }
+      const btn=$('#pcSave'); btn.disabled=true;
+      try{ await pcReset($('#pcPw').value,a.value); closeSafety(); toast('New passcode saved','You\'re in Settings now','lock'); res(true); }
+      catch(e){ $('#pcErr').textContent=e.message; btn.disabled=false; }
+    };
+  });
+}
+
+// Accounts made before passcodes existed get a pop-up with an Update button
+async function askPasscodeIfNeeded(){
+  let has; try{ has=await pcHas(); }catch{ return; }
+  if(has) return;
+  $('#safety').dataset.locked='1';
+  openSafety(`<div style="text-align:center">${icon('lock')}</div><h2 style="text-align:center;margin-top:6px">Update: lock your Settings</h2>
+    <div class="sub" style="text-align:center;line-height:1.5">Daybloom now has a Settings passcode, so only you can change your profile, your account and your settings. Push Update to make yours.</div>
+    <div class="modal-actions" style="justify-content:center"><button class="btn primary" id="pcUpdate">Update</button></div>`);
+  $('#pcUpdate').onclick=()=>makePasscode({title:'Make your passcode',sub:'Pick 4 numbers you\'ll remember. You\'ll type them every time you open Settings.',locked:true});
+}
+$('#pcChange').onclick=()=>makePasscode({title:'Change your passcode',sub:'Pick 4 new numbers for opening Settings.',change:true});
+
 function personActions(p){
   if(!p||p.id===Cloud.me?.id) return;
   openSafety(`<h2>${esc(p.name||'Someone')}</h2>${p.username?`<div class="sub">@${esc(p.username)}</div>`:''}
@@ -2681,7 +2814,8 @@ $('#rulesLink').href=RULES_URL; $('#gRulesLink').href=RULES_URL; $('#privacyLink
 // Everyone agrees to the community rules once (bump RULES_VERSION if the rules change)
 const RULES_VERSION=1;
 function askRulesIfNeeded(){
-  if((settings.rulesAccepted||0)>=RULES_VERSION) return;
+  if((settings.rulesAccepted||0)>=RULES_VERSION) return Promise.resolve();
+  return new Promise(done=>{
   $('#safety').dataset.locked='1';
   openSafety(`<div style="text-align:center">${icon('shield')}</div><h2 style="text-align:center;margin-top:6px">Daybloom Community Rules</h2>
     <div class="rules-box"><ul style="padding-left:18px;margin:0">
@@ -2692,7 +2826,8 @@ function askRulesIfNeeded(){
       <li>If someone makes you uncomfortable, block and report them.</li></ul>
       <p style="margin:10px 0 0">Breaking these rules can get content or accounts removed. <a href="${RULES_URL}" target="_blank" rel="noopener">Read the full rules and terms</a>.</p></div>
     <div class="modal-actions" style="justify-content:center"><button class="btn primary" id="rulesOk">I agree</button></div>`);
-  $('#rulesOk').onclick=()=>{ settings.rulesAccepted=RULES_VERSION; store.set('settings',settings); delete $('#safety').dataset.locked; closeSafety(); };
+  $('#rulesOk').onclick=()=>{ settings.rulesAccepted=RULES_VERSION; store.set('settings',settings); delete $('#safety').dataset.locked; closeSafety(); done(); };
+  });
 }
 $('#deleteAcct').onclick=()=>{
   const name=SI_USER?.username||'';
@@ -2728,12 +2863,13 @@ async function hashPassword(pw,salt){
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits']);
   return b64(new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:210000},key,256)));
 }
-async function localAuth(mode,u,pw){
+async function localAuth(mode,u,pw,code){
   const accts=JSON.parse(localStorage.getItem('si.accounts')||'{}');
   if(mode==='up'){
     if(accts[u]) throw new Error('That username is already taken on this device');
     const salt=crypto.getRandomValues(new Uint8Array(16));
-    accts[u]={id:uuid(),salt:b64(salt),hash:await hashPassword(pw,salt)};
+    const pcSalt=crypto.getRandomValues(new Uint8Array(16));
+    accts[u]={id:uuid(),salt:b64(salt),hash:await hashPassword(pw,salt),pc:{salt:b64(pcSalt),hash:await hashPassword(code,pcSalt)}};
     localStorage.setItem('si.accounts',JSON.stringify(accts));
   } else {
     const a=accts[u];
@@ -2741,12 +2877,13 @@ async function localAuth(mode,u,pw){
   }
   return {mode:'local',id:accts[u].id,username:u};
 }
-async function cloudAuth(mode,u,pw){
+async function cloudAuth(mode,u,pw,code){
   const sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseKey);
   if(mode==='up'){
     const {data,error}=await sb.auth.signUp({email:userEmail(u),password:pw});
     if(error) throw new Error(/registered|exists/i.test(error.message)?'That username is already taken':error.message);
     if(!data.session) throw new Error('Your account was made, but Supabase is asking for email confirmation. Turn off "Confirm email" in Supabase, then sign in.');
+    await sb.rpc('set_settings_passcode',{p_code:code});   // if this ever fails, Daybloom asks for a passcode after signing in
     return {mode:'cloud',id:data.user.id,username:u};
   }
   const {data,error}=await sb.auth.signInWithPassword({email:userEmail(u),password:pw});
@@ -2769,7 +2906,7 @@ function initGate(){
   let mode='in';
   const setMode=m=>{
     mode=m; $('#gateSeg').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
-    $('#gConfirmWrap').style.display=$('#gRules').style.display=$('#gAgreeWrap').style.display=m==='up'?'':'none';
+    $('#gConfirmWrap').style.display=$('#gCodeWrap').style.display=$('#gRules').style.display=$('#gAgreeWrap').style.display=m==='up'?'':'none';
     $('#gPass').autocomplete=m==='up'?'new-password':'current-password';
     $('#gGo').textContent=m==='up'?'Create account':'Sign in';
     $('#gateSub').textContent=m==='up'?'Make an account to start planning your days.':'Welcome back. Sign in to your schedule.';
@@ -2781,6 +2918,7 @@ function initGate(){
   // Only rewrite the box when something needs fixing; rewriting on every key press makes iPhone keyboards drop letters
   $('#gUser').oninput=e=>{ const v=e.target.value.replace(/[^A-Za-z0-9_]/g,''); if(v!==e.target.value) e.target.value=v; $('#gErr').textContent=''; };
   $('#gPass').oninput=$('#gPass2').oninput=()=>$('#gErr').textContent='';
+  $('#gCode').oninput=e=>{ const v=e.target.value.replace(/\D/g,'').slice(0,4); if(v!==e.target.value) e.target.value=v; $('#gErr').textContent=''; };
   $('#gNote').textContent=CLOUD?'Your account works on any phone or computer.':CLOUD_SET_UP?"You're offline. Connect to the internet to sign in or sign up.":'Accounts are saved on this device for now. They move online once Daybloom is connected.';
   if(!localStorage.getItem('si.accounts')&&!CLOUD_SET_UP) setMode('up');
   $('#gateForm').onsubmit=async e=>{
@@ -2790,12 +2928,14 @@ function initGate(){
     if(!USERNAME_RE.test(u)) return err('Usernames are 3 to 20 letters, numbers or _');
     if(mode==='up'&&pw.length<8) return err('Passwords need at least 8 characters');
     if(mode==='up'&&pw!==$('#gPass2').value) return err("The two passwords don't match");
+    const code=$('#gCode').value;
+    if(mode==='up'&&!PC_RE.test(code)) return err('Pick a Settings passcode with 4 numbers');
     if(mode==='up'&&!$('#gAgree').checked) return err('Please agree to the Community Rules to make an account');
     if(!pw) return err('Enter your password');
     const go=$('#gGo'); go.disabled=true; go.textContent=mode==='up'?'Creating account...':'Signing in...';
     try{
       if(CLOUD_SET_UP&&!CLOUD) throw new Error("You're offline. Connect to the internet and try again.");
-      const sess=CLOUD?await cloudAuth(mode,u,pw):await localAuth(mode,u,pw);
+      const sess=CLOUD?await cloudAuth(mode,u,pw,code):await localAuth(mode,u,pw,code);
       localStorage.setItem('si.session',JSON.stringify(sess));
       if(mode==='up'){ const k='si.u.'+sess.id+'.settings', st=JSON.parse(localStorage.getItem(k)||'{}'); st.rulesAccepted=RULES_VERSION; localStorage.setItem(k,JSON.stringify(st));
         // Your name starts out the way you typed your username, capitals and all
@@ -2825,6 +2965,7 @@ else {
       ?'This account is saved only on this device. To use Friends, sign out and sign up for an online account.'
       :'Friends turns on once Daybloom is connected online. Your calendar, clock and settings already work.';
     if(pendingAdd) toast('Not online yet','Friends needs the app to be connected first','cloud');
+    if(SI_USER.mode!=='cloud') askPasscodeIfNeeded();
   }
 }
 window.SI={startCloud};

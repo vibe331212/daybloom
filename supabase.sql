@@ -777,3 +777,85 @@ create policy "avatars: admins see" on storage.objects for select to authenticat
 drop policy if exists "pictures: admins remove" on storage.objects;
 create policy "pictures: admins remove" on storage.objects for delete to authenticated
   using (bucket_id in ('avatars', 'chat-media') and public.is_admin());
+
+-- ================= Settings passcode =================
+-- A 4-digit code you type before opening Settings. Only a scrambled (bcrypt) copy is kept, and
+-- nobody can read it: the app can only ask "is this the right code?"
+create extension if not exists pgcrypto with schema extensions;
+create table if not exists public.settings_passcodes (
+  user_id      uuid primary key references auth.users(id) on delete cascade,
+  hash         text not null,
+  fails        int not null default 0,
+  locked_until timestamptz,
+  updated_at   timestamptz not null default now()
+);
+alter table public.settings_passcodes enable row level security;
+revoke all on public.settings_passcodes from anon, authenticated;
+
+create or replace function public.has_settings_passcode()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.settings_passcodes where user_id = auth.uid());
+$$;
+
+-- Too many wrong tries locks it for 5 minutes, so nobody can guess all 10,000 codes
+create or replace function public.check_settings_passcode(p_code text)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare r public.settings_passcodes;
+begin
+  select * into r from public.settings_passcodes where user_id = auth.uid() for update;
+  if not found then return true; end if;
+  if r.locked_until is not null and r.locked_until > now() then
+    raise exception 'Too many wrong tries. Wait % more minute(s) and try again.', ceil(extract(epoch from r.locked_until - now()) / 60)::int;
+  end if;
+  if r.hash = extensions.crypt(coalesce(p_code, ''), r.hash) then
+    update public.settings_passcodes set fails = 0, locked_until = null where user_id = r.user_id;
+    return true;
+  end if;
+  update public.settings_passcodes
+     set fails = case when r.fails + 1 >= 5 then 0 else r.fails + 1 end,
+         locked_until = case when r.fails + 1 >= 5 then now() + interval '5 minutes' else null end
+   where user_id = r.user_id;
+  return false;
+end $$;
+
+-- Making a passcode, or changing it (changing needs the old one)
+-- (returns false for a wrong old code instead of an error, so wrong tries still count toward the lock)
+drop function if exists public.set_settings_passcode(text, text) cascade;
+create or replace function public.set_settings_passcode(p_code text, p_old text default null)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Sign in first'; end if;
+  if p_code is null or p_code !~ '^[0-9]{4}$' then raise exception 'The passcode has to be 4 numbers'; end if;
+  if exists (select 1 from public.settings_passcodes where user_id = auth.uid())
+     and not public.check_settings_passcode(p_old) then
+    return false;
+  end if;
+  insert into public.settings_passcodes (user_id, hash) values (auth.uid(), extensions.crypt(p_code, extensions.gen_salt('bf', 8)))
+  on conflict (user_id) do update set hash = excluded.hash, fails = 0, locked_until = null, updated_at = now();
+  return true;
+end $$;
+
+-- Forgot it: works only right after you type your account password again (checked by the sign-in time)
+create or replace function public.reset_settings_passcode(p_code text)
+returns void language plpgsql security definer set search_path = public as $$
+declare signed_in_at bigint;
+begin
+  if auth.uid() is null then raise exception 'Sign in first'; end if;
+  if p_code is null or p_code !~ '^[0-9]{4}$' then raise exception 'The passcode has to be 4 numbers'; end if;
+  select max((a->>'timestamp')::bigint) into signed_in_at
+    from jsonb_array_elements(coalesce(auth.jwt()->'amr', '[]'::jsonb)) a where a->>'method' = 'password';
+  if signed_in_at is null or signed_in_at < extract(epoch from now())::bigint - 300 then
+    raise exception 'Type your account password again first';
+  end if;
+  insert into public.settings_passcodes (user_id, hash) values (auth.uid(), extensions.crypt(p_code, extensions.gen_salt('bf', 8)))
+  on conflict (user_id) do update set hash = excluded.hash, fails = 0, locked_until = null, updated_at = now();
+end $$;
+
+revoke execute on function public.has_settings_passcode()             from public, anon;
+revoke execute on function public.check_settings_passcode(text)       from public, anon;
+revoke execute on function public.set_settings_passcode(text, text)   from public, anon;
+revoke execute on function public.reset_settings_passcode(text)       from public, anon;
+grant  execute on function public.has_settings_passcode()             to authenticated;
+grant  execute on function public.check_settings_passcode(text)       to authenticated;
+grant  execute on function public.set_settings_passcode(text, text)   to authenticated;
+grant  execute on function public.reset_settings_passcode(text)       to authenticated;
