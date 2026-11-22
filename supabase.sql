@@ -122,6 +122,10 @@ begin
   uname := split_part(email, '@', 1);
   select * into me from public.profiles where id = auth.uid();
   if not found then
+    -- Usernames of accounts an admin removed can't be used again (removed_accounts is created further down)
+    if exists (select 1 from public.removed_accounts where username = uname) then
+      raise exception 'This username was removed for breaking the Daybloom Community Rules.';
+    end if;
     insert into public.profiles (id, name, username, shirt, style, code)
     values (auth.uid(), coalesce(nullif(left(trim(p_name), 30), ''), uname), uname,
             coalesce(p_shirt, '#7c5cff'), coalesce(p_style, 'fox'), public.new_friend_code())
@@ -651,3 +655,125 @@ create policy "avatars: only my folder" on storage.objects for insert to authent
 drop policy if exists "avatars: I remove mine" on storage.objects;
 create policy "avatars: I remove mine" on storage.objects for delete to authenticated
   using (bucket_id = 'avatars' and owner_id = auth.uid()::text);
+
+-- ---------- Admins: read reports, reply, dismiss, remove accounts ----------
+-- Admins are added by hand in the Supabase SQL editor; the app can never make someone an admin.
+create table if not exists public.admins (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  added_at timestamptz not null default now()
+);
+alter table public.admins enable row level security;
+revoke all on public.admins from anon, authenticated;
+
+create table if not exists public.removed_accounts (
+  username text primary key,
+  removed_at timestamptz not null default now(),
+  removed_by uuid,
+  note text
+);
+alter table public.removed_accounts enable row level security;
+revoke all on public.removed_accounts from anon, authenticated;
+
+alter table public.reports add column if not exists reply text check (char_length(reply) <= 1000);
+alter table public.reports add column if not exists replied_at timestamptz;
+alter table public.reports add column if not exists handled_at timestamptz;
+
+create or replace function public.is_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.admins where user_id = auth.uid());
+$$;
+
+create or replace function public.admin_reports()
+returns json language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Only admins can see reports'; end if;
+  return coalesce((select json_agg(r order by r.created_at desc) from (
+    select rp.id, rp.reason, rp.details, rp.status, rp.reply, rp.replied_at, rp.created_at,
+           rp.message_body, rp.message_image, rp.reported_user, rp.reported_username,
+           rp.reporter, a.username as reporter_username, a.name as reporter_name,
+           b.name as reported_name, b.style as reported_style, b.shirt as reported_shirt, b.photo as reported_photo,
+           (select count(*) from public.reports x where x.reported_user = rp.reported_user and rp.reported_user is not null) as times_reported,
+           exists (select 1 from public.admins ad where ad.user_id = rp.reported_user) as reported_is_admin
+      from public.reports rp
+      left join public.profiles a on a.id = rp.reporter
+      left join public.profiles b on b.id = rp.reported_user
+     order by rp.created_at desc limit 300) r), '[]'::json);
+end $$;
+
+create or replace function public.admin_reply(p_report uuid, p_text text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Only admins can reply'; end if;
+  if char_length(btrim(coalesce(p_text, ''))) < 2 then raise exception 'Write a reply first'; end if;
+  update public.reports set reply = left(btrim(p_text), 1000), replied_at = now(), status = 'replied', handled_at = now()
+   where id = p_report;
+end $$;
+
+create or replace function public.admin_set_status(p_report uuid, p_status text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Only admins can change reports'; end if;
+  if p_status not in ('new', 'dismissed') then raise exception 'Unknown status'; end if;
+  update public.reports set status = p_status, handled_at = case when p_status = 'new' then null else now() end where id = p_report;
+end $$;
+
+-- Pictures that belong to someone, so the app can delete them before removing the account
+create or replace function public.admin_user_files(p_user uuid)
+returns json language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Only admins can do that'; end if;
+  return json_build_object(
+    'avatars', coalesce((select json_agg(name) from storage.objects where bucket_id = 'avatars' and split_part(name, '/', 1) = p_user::text), '[]'::json),
+    'media', coalesce((select json_agg(image_path) from public.messages where sender = p_user and image_path is not null), '[]'::json));
+end $$;
+
+create or replace function public.admin_remove_account(p_user uuid, p_note text)
+returns void language plpgsql security definer set search_path = public as $$
+declare uname text;
+begin
+  if not public.is_admin() then raise exception 'Only admins can remove accounts'; end if;
+  if p_user = auth.uid() then raise exception 'You cannot remove your own account here'; end if;
+  if exists (select 1 from public.admins where user_id = p_user) then raise exception 'You cannot remove another admin'; end if;
+  select username into uname from public.profiles where id = p_user;
+  if uname is not null then
+    insert into public.removed_accounts (username, removed_by, note) values (uname, auth.uid(), left(p_note, 300))
+    on conflict (username) do nothing;
+  end if;
+  update public.reports set status = 'removed', handled_at = now() where reported_user = p_user and status <> 'replied';
+  delete from auth.users where id = p_user;
+  delete from public.conversations c where not exists (select 1 from public.conversation_members m where m.conversation_id = c.id);
+end $$;
+
+-- What people see about the reports and support messages they sent: only the ones an admin answered
+create or replace function public.my_report_replies()
+returns json language sql stable security definer set search_path = public as $$
+  select coalesce(json_agg(r order by r.replied_at desc), '[]'::json) from (
+    select id, reason, details, reported_username, reply, replied_at, created_at
+      from public.reports where reporter = auth.uid() and reply is not null order by replied_at desc limit 50) r;
+$$;
+
+revoke execute on function public.is_admin()                          from public, anon;
+revoke execute on function public.admin_reports()                     from public, anon;
+revoke execute on function public.admin_reply(uuid, text)             from public, anon;
+revoke execute on function public.admin_set_status(uuid, text)        from public, anon;
+revoke execute on function public.admin_user_files(uuid)              from public, anon;
+revoke execute on function public.admin_remove_account(uuid, text)    from public, anon;
+revoke execute on function public.my_report_replies()                 from public, anon;
+grant  execute on function public.is_admin()                          to authenticated;
+grant  execute on function public.admin_reports()                     to authenticated;
+grant  execute on function public.admin_reply(uuid, text)             to authenticated;
+grant  execute on function public.admin_set_status(uuid, text)        to authenticated;
+grant  execute on function public.admin_user_files(uuid)              to authenticated;
+grant  execute on function public.admin_remove_account(uuid, text)    to authenticated;
+grant  execute on function public.my_report_replies()                 to authenticated;
+
+-- Admins can look at reported photos and profile pictures, and delete a removed person's pictures
+drop policy if exists "chat media: admins see reported" on storage.objects;
+create policy "chat media: admins see reported" on storage.objects for select to authenticated
+  using (bucket_id = 'chat-media' and public.is_admin() and exists (select 1 from public.reports r where r.message_image = name));
+drop policy if exists "avatars: admins see" on storage.objects;
+create policy "avatars: admins see" on storage.objects for select to authenticated
+  using (bucket_id = 'avatars' and public.is_admin());
+drop policy if exists "pictures: admins remove" on storage.objects;
+create policy "pictures: admins remove" on storage.objects for delete to authenticated
+  using (bucket_id in ('avatars', 'chat-media') and public.is_admin());
