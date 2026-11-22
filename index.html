@@ -2540,24 +2540,48 @@ $('#safetyScrim').addEventListener('click',e=>{ if(e.target.id==='safetyScrim'&&
 const PC_RE=/^[0-9]{4}$/;
 let myPasscode=null;   // the code typed to open Settings this time, needed to change it
 const localAccts=()=>JSON.parse(localStorage.getItem('si.accounts')||'{}');
-const pcApi=()=>{ if(!Cloud.api) throw new Error('Connect to the internet to open Settings'); return Cloud.api; };
-async function pcHas(){ return SI_USER.mode==='cloud'?pcApi().hasPasscode():!!localAccts()[SI_USER.username]?.pc; }
+// Online accounts check the passcode on the server. Each phone also keeps its own scrambled copy
+// (saved whenever the passcode is typed right online), so Settings still opens with no internet.
+const pcApi=()=>{ if(!Cloud.api) throw Object.assign(new Error('offline'),{offline:true}); return Cloud.api; };
+const netErr=e=>!navigator.onLine||e?.offline||/fetch|network|load failed|offline|timed out|internet/i.test(e?.message||'');
+const withTimeout=p=>Promise.race([p,new Promise((_,no)=>setTimeout(()=>no(Object.assign(new Error('timed out'),{offline:true})),6000))]);
+async function pcScramble(code){ const salt=crypto.getRandomValues(new Uint8Array(16)); return {salt:b64(salt),hash:await hashPassword(code,salt)}; }
+const pcRemember=async code=>{ store.set('pcLocal',await pcScramble(code)); store.set('pcFails',{n:0,until:0}); };
+// Checks against a scrambled copy on this phone; 5 wrong tries locks it for 5 minutes here too
+async function pcLocalCheck(code,pc){
+  const f=store.get('pcFails',{n:0,until:0});
+  if(f.until>Date.now()) throw new Error(`Too many wrong tries. Wait ${Math.ceil((f.until-Date.now())/60000)} more minute(s) and try again.`);
+  const right=await hashPassword(code,unb64(pc.salt))===pc.hash;
+  if(right) store.set('pcFails',{n:0,until:0});
+  else { const n=f.n+1; store.set('pcFails',n>=5?{n:0,until:Date.now()+300000}:{n,until:0}); }
+  return right;
+}
+const NEED_NET_ONCE='Connect to the internet once, so this phone can learn your passcode';
+async function pcHas(){
+  if(SI_USER.mode!=='cloud') return !!localAccts()[SI_USER.username]?.pc;
+  try{ const has=await withTimeout(pcApi().hasPasscode()); if(!has) store.set('pcLocal',null); return has; }
+  catch(e){ if(!netErr(e)) throw e; if(store.get('pcLocal',null)) return true; throw new Error(NEED_NET_ONCE); }
+}
 async function pcCheck(code){
-  if(SI_USER.mode==='cloud') return pcApi().checkPasscode(code);
-  const pc=localAccts()[SI_USER.username]?.pc; return !pc||await hashPassword(code,unb64(pc.salt))===pc.hash;
+  if(SI_USER.mode!=='cloud'){ const pc=localAccts()[SI_USER.username]?.pc; return !pc||pcLocalCheck(code,pc); }
+  try{ const right=await withTimeout(pcApi().checkPasscode(code)); if(right) await pcRemember(code); return right; }
+  catch(e){ if(!netErr(e)) throw e; const pc=store.get('pcLocal',null); if(!pc) throw new Error(NEED_NET_ONCE); return pcLocalCheck(code,pc); }
 }
 async function pcSaveLocal(code){
-  const a=localAccts(), salt=crypto.getRandomValues(new Uint8Array(16));
-  a[SI_USER.username].pc={salt:b64(salt),hash:await hashPassword(code,salt)}; localStorage.setItem('si.accounts',JSON.stringify(a));
+  const a=localAccts(); a[SI_USER.username].pc=await pcScramble(code); localStorage.setItem('si.accounts',JSON.stringify(a));
 }
+const needNet=(e,what)=>{ throw netErr(e)?new Error(`Connect to the internet to ${what}`):e; };
 async function pcSet(code,old){
-  if(SI_USER.mode==='cloud'){ if(!await pcApi().setPasscode(code,old)) throw new Error('Your current passcode is wrong'); }
-  else { if(localAccts()[SI_USER.username]?.pc&&!await pcCheck(old)) throw new Error('Your current passcode is wrong'); await pcSaveLocal(code); }
+  if(SI_USER.mode==='cloud'){
+    let done; try{ done=await withTimeout(pcApi().setPasscode(code,old)); }catch(e){ needNet(e,'save your passcode'); }
+    if(!done) throw new Error('Your current passcode is wrong');
+    await pcRemember(code);
+  } else { const pc=localAccts()[SI_USER.username]?.pc; if(pc&&!await pcLocalCheck(old,pc)) throw new Error('Your current passcode is wrong'); await pcSaveLocal(code); }
   myPasscode=code;
 }
 async function pcReset(pw,code){
-  if(SI_USER.mode==='cloud') await pcApi().resetPasscode(SI_USER.username,pw,code);
-  else { const a=localAccts()[SI_USER.username]; if(!a||await hashPassword(pw,unb64(a.salt))!==a.hash) throw new Error('That password is wrong'); await pcSaveLocal(code); }
+  if(SI_USER.mode==='cloud'){ try{ await withTimeout(pcApi().resetPasscode(SI_USER.username,pw,code)); }catch(e){ needNet(e,'reset your passcode'); } await pcRemember(code); }
+  else { const a=localAccts()[SI_USER.username]; if(!a||await hashPassword(pw,unb64(a.salt))!==a.hash) throw new Error('That password is wrong'); await pcSaveLocal(code); store.set('pcFails',{n:0,until:0}); }
   myPasscode=code;
 }
 const pcBox=(id,label)=>`${label?`<div class="pc-label">${label}</div>`:''}<input class="inp pc-inp" id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" aria-label="${label||'Passcode'}">`;
@@ -2647,6 +2671,17 @@ async function askPasscodeIfNeeded(){
     <div class="modal-actions" style="justify-content:center"><button class="btn primary" id="pcUpdate">Update</button></div>`);
   $('#pcUpdate').onclick=()=>makePasscode({title:'Make your passcode',sub:'Pick 4 numbers you\'ll remember. You\'ll type them every time you open Settings.',locked:true});
 }
+let pcHiddenAt=0;
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ pcHiddenAt=Date.now(); return; }
+  if(!settingsUnlocked||Date.now()-pcHiddenAt<120000) return;
+  settingsUnlocked=false; myPasscode=null;
+  if($('#view-settings').classList.contains('active')){
+    closeScrim('#safetyScrim'); $('#cropScrim')?.classList.remove('open');
+    document.querySelector('.tab[data-view="calendar"]').click();
+    toast('Settings locked','Type your passcode to open them again','lock');
+  }
+});
 $('#pcChange').onclick=()=>makePasscode({title:'Change your passcode',sub:'Pick 4 new numbers for opening Settings.',change:true});
 
 function personActions(p){
@@ -2937,6 +2972,7 @@ function initGate(){
       if(CLOUD_SET_UP&&!CLOUD) throw new Error("You're offline. Connect to the internet and try again.");
       const sess=CLOUD?await cloudAuth(mode,u,pw,code):await localAuth(mode,u,pw,code);
       localStorage.setItem('si.session',JSON.stringify(sess));
+      if(mode==='up'&&CLOUD) localStorage.setItem('si.u.'+sess.id+'.pcLocal',JSON.stringify(await pcScramble(code)));
       if(mode==='up'){ const k='si.u.'+sess.id+'.settings', st=JSON.parse(localStorage.getItem(k)||'{}'); st.rulesAccepted=RULES_VERSION; localStorage.setItem(k,JSON.stringify(st));
         // Your name starts out the way you typed your username, capitals and all
         const pk='si.u.'+sess.id+'.profile', pr=JSON.parse(localStorage.getItem(pk)||'{}'); if(!pr.name){ pr.name=typed; localStorage.setItem(pk,JSON.stringify(pr)); } }
