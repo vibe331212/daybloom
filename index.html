@@ -717,7 +717,7 @@ html.locked body{overflow:hidden}
         <div class="card">
           <h2>Account</h2>
           <div class="set-row"><div><div class="k">Settings passcode</div><div class="v">You type it every time you open Settings</div></div><button class="btn ghost" id="pcChange">Change</button></div>
-          <div class="set-row" id="bioRow" hidden><div><div class="k" id="bioName">Face ID</div><div class="v" id="bioSub">Open Settings with Face ID instead of your passcode</div></div><button type="button" class="switch" id="bioSwitch" role="switch" aria-checked="false" aria-label="Face ID"><i></i></button></div>
+          <div class="set-row" id="bioRow" hidden style="flex-wrap:wrap;gap:10px"><div><div class="k">Open Settings with</div><div class="v" id="bioSub">Pick how you unlock Settings on this phone</div></div><div class="seg" id="bioSeg" role="radiogroup" aria-label="Open Settings with"><button type="button" data-m="pass" role="radio">Passcode</button><button type="button" data-m="bio" role="radio" id="bioOpt">Face ID</button></div></div>
           <div class="set-row"><div><div class="k" id="acctName"></div><div class="v" id="acctMode"></div></div><button class="btn ghost" id="signOut">Sign out</button></div>
           <div class="set-row"><div><div class="k">Delete account</div><div class="v">Erases your account, events, friends and the messages you sent</div></div><button class="btn danger" id="deleteAcct">Delete</button></div>
         </div>
@@ -2709,13 +2709,15 @@ async function offerBio(){
 async function renderBio(){
   const info=await bioInfo(); $('#bioRow').hidden=!info; if(!info) return;
   const n=bioName(info), on=!!store.get('pcBio',null)?.on;
-  $('#bioName').textContent=n; $('#bioSwitch').setAttribute('aria-label',n); $('#bioSwitch').setAttribute('aria-checked',on);
-  $('#bioSub').textContent=info.available?`Open Settings with ${n} instead of your passcode`:`Set up ${n} in your iPhone Settings to use it here`;
+  $('#bioOpt').textContent=n;
+  $('#bioSeg').querySelectorAll('button').forEach(b=>{ const sel=(b.dataset.m==='bio')===on; b.classList.toggle('on',sel); b.setAttribute('aria-checked',sel); });
+  $('#bioSub').textContent=info.available?(on?`${n} opens Settings. Your passcode still works if it doesn't.`:'Settings asks for your 4-number passcode'):`Set up ${n} in your iPhone Settings to use it here`;
 }
-$('#bioSwitch').onclick=async()=>{
-  if(store.get('pcBio',null)?.on){ store.set('pcBio',null); renderBio(); toast('Turned off','Settings will ask for your passcode','lock'); }
-  else await enableBio();
-};
+$('#bioSeg').querySelectorAll('button').forEach(b=>b.onclick=async()=>{
+  const on=!!store.get('pcBio',null)?.on;
+  if(b.dataset.m==='pass'&&on){ store.set('pcBio',null); renderBio(); toast('Passcode it is','Settings will ask for your passcode','lock'); }
+  else if(b.dataset.m==='bio'&&!on) await enableBio();
+});
 if(SI_USER) renderBio();
 
 let pcHiddenAt=0;
