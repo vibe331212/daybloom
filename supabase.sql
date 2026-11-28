@@ -867,3 +867,27 @@ grant  execute on function public.has_settings_passcode()             to authent
 grant  execute on function public.check_settings_passcode(text)       to authenticated;
 grant  execute on function public.set_settings_passcode(text, text)   to authenticated;
 grant  execute on function public.reset_settings_passcode(text)       to authenticated;
+
+-- ================= Pop-up notes from admins =================
+-- A one-time pop-up for one person. Admins add them with SQL; the person sees it next time Daybloom opens.
+create table if not exists public.notices (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  body       text not null check (char_length(body) between 1 and 500),
+  created_at timestamptz not null default now(),
+  seen_at    timestamptz
+);
+alter table public.notices enable row level security;
+revoke all on public.notices from anon, authenticated;
+
+-- Hands over the notes you haven't seen yet and marks them seen
+create or replace function public.take_my_notices()
+returns json language plpgsql security definer set search_path = public as $$
+declare out json;
+begin
+  with t as (update public.notices set seen_at = now() where user_id = auth.uid() and seen_at is null returning id, body, created_at)
+  select coalesce(json_agg(t order by t.created_at), '[]'::json) into out from t;
+  return out;
+end $$;
+revoke execute on function public.take_my_notices() from public, anon;
+grant  execute on function public.take_my_notices() to authenticated;

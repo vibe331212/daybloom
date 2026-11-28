@@ -1866,6 +1866,7 @@ function supabaseApi({supabaseUrl,supabaseKey}){
       if(error) throw new Error(/invalid/i.test(error.message)?'That password is wrong':error.message);
       ok(await sb.rpc('reset_settings_passcode',{p_code:code}));
     },
+    async takeNotices(){ return ok(await sb.rpc('take_my_notices'))||[]; },
     async myReplies(){ return ok(await sb.rpc('my_report_replies'))||[]; },
     async isAdmin(){ try{ return !!ok(await sb.rpc('is_admin')); }catch{ return false; } },
     async adminReports(){
@@ -1964,7 +1965,7 @@ async function startCloud(api){
     askRulesIfNeeded().then(askPasscodeIfNeeded);
     try{ api.listen(onNewMessage,onReaction); }catch{}
     setInterval(pollChats,15000);
-    initAdmin(); loadMyReplies();
+    initAdmin(); loadMyReplies(); checkNotices(); setInterval(checkNotices,60000);
     if(pendingAdd){ const c=pendingAdd; pendingAdd=null; try{ sessionStorage.removeItem('si.pendingAdd'); }catch{} offerAdd(c); }
   }catch(e){
     if(e.message==='signed-out'){ endSession(); return; }
@@ -2831,6 +2832,20 @@ async function reportAction(r,act){
 }
 
 /* ---------- Replies from Daybloom (for the person who sent a report) ---------- */
+// One-time pop-ups an admin sent just to this person
+let noticeQueue=[];
+async function checkNotices(){
+  let list; try{ list=await Cloud.api.takeNotices(); }catch{ return; }
+  noticeQueue.push(...list); showNextNotice();
+}
+function showNextNotice(){
+  if(!noticeQueue.length||$('#safetyScrim').classList.contains('open')) { if(noticeQueue.length) setTimeout(showNextNotice,3000); return; }
+  const n=noticeQueue.shift();
+  delete $('#safety').dataset.locked;
+  openSafety(`<div style="text-align:center;padding:8px 0"><h2 style="font-size:24px;line-height:1.35;margin:0">${esc(n.body)}</h2></div>
+    <div class="modal-actions" style="justify-content:center"><button class="btn primary" id="noticeOk">OK</button></div>`);
+  $('#noticeOk').onclick=()=>{ closeSafety(); setTimeout(showNextNotice,400); };
+}
 let myReplies=[];
 async function loadMyReplies(){
   try{ myReplies=await Cloud.api.myReplies(); }catch{ return; }
