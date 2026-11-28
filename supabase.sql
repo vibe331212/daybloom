@@ -768,9 +768,17 @@ grant  execute on function public.admin_remove_account(uuid, text)    to authent
 grant  execute on function public.my_report_replies()                 to authenticated;
 
 -- Admins can look at reported photos and profile pictures, and delete a removed person's pictures
+-- (The reports check runs inside a security-definer function: storage checks every policy for every person,
+--  and normal accounts can't read the reports table, so a plain subquery here broke all photos for them.)
+create or replace function public.admin_sees_reported_media(obj_name text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select public.is_admin() and exists (select 1 from public.reports r where r.message_image = obj_name);
+$$;
+revoke execute on function public.admin_sees_reported_media(text) from public, anon;
+grant  execute on function public.admin_sees_reported_media(text) to authenticated;
 drop policy if exists "chat media: admins see reported" on storage.objects;
 create policy "chat media: admins see reported" on storage.objects for select to authenticated
-  using (bucket_id = 'chat-media' and public.is_admin() and exists (select 1 from public.reports r where r.message_image = name));
+  using (bucket_id = 'chat-media' and public.admin_sees_reported_media(name));
 drop policy if exists "avatars: admins see" on storage.objects;
 create policy "avatars: admins see" on storage.objects for select to authenticated
   using (bucket_id = 'avatars' and public.is_admin());
